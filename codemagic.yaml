@@ -9,7 +9,9 @@ workflows:
       - name: Set Gradle wrapper permissions
         script: chmod +x gradlew
       - name: Build debug APK
-        script: ./gradlew assembleDebug --no-daemon --stacktrace
+        script: |
+          unset JAVA_TOOL_OPTIONS
+          ./gradlew assembleDebug --no-daemon --stacktrace
     artifacts:
       - "app/build/outputs/apk/debug/*.apk"
 
@@ -28,6 +30,7 @@ workflows:
         script: chmod +x gradlew
       - name: Build release APK
         script: |
+          unset JAVA_TOOL_OPTIONS
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace \
