@@ -90,4 +90,13 @@ class EmojiEngine(
             dao.setFavorite(emoji.unicode, isFavorite)
         }
     }
+
+    /**
+     * Called when the system signals memory pressure.
+     * EmojiData is static and always needed, so no cache to drop here.
+     * Room's internal query cache is managed by SQLite/WAL.
+     */
+    fun trimMemory(level: Int) {
+        // No in-memory caches to release — emoji data is lazily resolved per-flow.
+    }
 }

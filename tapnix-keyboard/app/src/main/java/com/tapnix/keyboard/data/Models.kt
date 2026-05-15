@@ -138,22 +138,22 @@ data class KeyboardTheme(
             shadowElevation = 3f,
         )
 
-        val Dusk = KeyboardTheme(
-            id = "dusk",
-            name = "Dusk",
-            keyBackground = Color(0xFF5C4D7D),
-            keyPressed = Color(0xFF3D325C),
-            keyText = Color(0xFFF0E6FF),
-            panelBackground = Color(0xFF2D1E4E),
-            suggestionBarBackground = Color(0xFF4A3A6A),
-            accentColor = Color(0xFFCE93D8),
-            keyCornerRadius = 10f,
-            enableBlur = false,
+        val Glass = KeyboardTheme(
+            id = "glass",
+            name = "Glassmorphism",
+            keyBackground = Color(0x33FFFFFF),
+            keyPressed = Color(0x55FFFFFF),
+            keyText = Color(0xFFFFFFFF),
+            panelBackground = Color(0x22000000),
+            suggestionBarBackground = Color(0x44000000),
+            accentColor = Color(0xFF80DEEA),
+            keyCornerRadius = 14f,
+            enableBlur = true,
             isAmoled = false,
-            shadowElevation = 2f,
+            shadowElevation = 0f,
         )
 
-        val allThemes = listOf(Default, Amoled, Ocean, Forest, Candy, Dusk)
+        val allThemes = listOf(Default, Amoled, Ocean, Forest, Candy, Glass)
     }
 }
 

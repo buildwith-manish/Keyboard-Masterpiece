@@ -58,6 +58,14 @@ class SuggestionEngine(
         }
     }
 
+    /**
+     * Called when the system signals memory pressure.
+     * Suggestions are fetched on-demand from Room; no hot cache to evict.
+     */
+    fun trimMemory(level: Int) {
+        // No in-memory suggestion cache to release.
+    }
+
     companion object {
         private val COMMON_WORDS = listOf(
             "the", "be", "to", "of", "and", "a", "in", "that", "have", "it",

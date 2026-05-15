@@ -252,6 +252,11 @@ class KeyboardViewModel(
         }
     }
 
+    fun onTrimMemory(level: Int) {
+        emojiEngine.trimMemory(level)
+        suggestionEngine.trimMemory(level)
+    }
+
     override fun onCleared() {
         super.onCleared()
         cancelAllLongPress()

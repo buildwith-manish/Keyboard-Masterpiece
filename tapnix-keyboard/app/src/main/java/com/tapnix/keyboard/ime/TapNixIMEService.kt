@@ -162,6 +162,16 @@ class TapNixIMEService :
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Memory pressure — release caches on low-memory signal
+    // ─────────────────────────────────────────────────────────────────────────
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_MODERATE) {
+            viewModel.onTrimMemory(level)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Password Field Detection
     // ─────────────────────────────────────────────────────────────────────────
     private fun detectAndApplyPasswordMode(info: EditorInfo?) {
