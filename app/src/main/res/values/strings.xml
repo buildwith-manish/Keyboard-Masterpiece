@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Keyboard Masterpiece</string>
+    <string name="ime_name">Keyboard Masterpiece</string>
+    <string name="settings_title">Keyboard Masterpiece Settings</string>
+    <string name="ime_subtype_en">English</string>
+    <string name="ime_subtype_es">Spanish</string>
+    <string name="ime_subtype_hi">Hindi</string>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <color name="bg_light">#EEF1F6</color>
+    <color name="bg_dark">#15171C</color>
+    <color name="key_light">#FFFFFF</color>
+    <color name="key_dark">#2A2D34</color>
+    <color name="accent">#4F7CFF</color>
+</resources>

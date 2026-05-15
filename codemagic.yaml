@@ -1,42 +1,29 @@
 workflows:
-  tapnix-debug:
-    name: TapNix Keyboard — Debug Build
+  android-debug-apk:
+    name: Keyboard Masterpiece Debug APK
     max_build_duration: 60
     environment:
       java: 17
-    working_directory: tapnix-keyboard
+      groups: []
     scripts:
-      - name: Set Gradle wrapper permissions
-        script: chmod +x gradlew
+      - name: Make Gradle executable
+        script: chmod +x ./gradlew
       - name: Build debug APK
-        script: |
-          unset JAVA_TOOL_OPTIONS
-          ./gradlew assembleDebug --no-daemon --stacktrace
+        script: ./gradlew clean assembleDebug --no-daemon --stacktrace
     artifacts:
-      - "app/build/outputs/apk/debug/*.apk"
+      - app/build/outputs/apk/debug/*.apk
+      - app/build/reports/**
 
-  tapnix-release:
-    name: TapNix Keyboard — Release Build
+  android-release-apk:
+    name: Keyboard Masterpiece Release APK
     max_build_duration: 60
     environment:
       java: 17
-      android_signing:
-        - tapnix_keystore
-      vars:
-        PACKAGE_NAME: com.tapnix.keyboard
-    working_directory: tapnix-keyboard
     scripts:
-      - name: Set Gradle wrapper permissions
-        script: chmod +x gradlew
-      - name: Build release APK
-        script: |
-          unset JAVA_TOOL_OPTIONS
-          ./gradlew assembleRelease \
-            --no-daemon \
-            --stacktrace \
-            -Pandroid.injected.signing.store.file=$CM_KEYSTORE_PATH \
-            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+      - name: Make Gradle executable
+        script: chmod +x ./gradlew
+      - name: Build unsigned release APK
+        script: ./gradlew clean assembleRelease --no-daemon --stacktrace
     artifacts:
-      - "app/build/outputs/apk/release/*.apk"
+      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/mapping/release/**

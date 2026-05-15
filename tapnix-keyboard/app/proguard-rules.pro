@@ -1,9 +1,0 @@
--keep class com.tapnix.keyboard.database.** { *; }
--keep class com.tapnix.keyboard.data.** { *; }
--keepclassmembers class * extends androidx.room.RoomDatabase { *; }
--keep @androidx.room.Entity class * { *; }
--keep @androidx.room.Dao interface * { *; }
--keepattributes *Annotation*
--keepattributes Signature
--dontwarn kotlin.reflect.jvm.internal.**
--keep class kotlin.Metadata { *; }

@@ -1,0 +1,3 @@
+-keep class com.keyboardmasterpiece.nativebridge.NativeGestureBridge { *; }
+-keep class com.keyboardmasterpiece.ime.KeyboardImeService { *; }
+-dontwarn kotlin.**
