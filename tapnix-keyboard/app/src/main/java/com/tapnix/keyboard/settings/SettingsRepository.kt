@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.tapnix.keyboard.data.KeyboardSettings
+import com.tapnix.keyboard.data.OneHandedMode
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.runBlocking
 
@@ -25,6 +26,8 @@ class SettingsRepository(private val context: Context) {
         .map { prefs -> prefs.toSettings() }
         .catch { emit(KeyboardSettings.Default) }
         .distinctUntilChanged()
+
+    // ── Existing settings ─────────────────────────────────────────────────────
 
     suspend fun updateTheme(themeId: String) {
         dataStore.edit { it[Keys.THEME_ID] = themeId }
@@ -65,6 +68,40 @@ class SettingsRepository(private val context: Context) {
         dataStore.edit { it[Keys.SHOW_SUGGESTIONS] = enabled }
     }
 
+    // ── Premium feature settings ──────────────────────────────────────────────
+
+    suspend fun updateSwipeTypingEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.SWIPE_TYPING] = enabled }
+    }
+
+    suspend fun updateAutoCorrectEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTO_CORRECT] = enabled }
+    }
+
+    suspend fun updateShowGrammarHints(enabled: Boolean) {
+        dataStore.edit { it[Keys.GRAMMAR_HINTS] = enabled }
+    }
+
+    suspend fun updateOneHandedMode(mode: OneHandedMode) {
+        dataStore.edit { it[Keys.ONE_HANDED_MODE] = mode.name }
+    }
+
+    suspend fun updateKeyboardHeightMultiplier(multiplier: Float) {
+        dataStore.edit { it[Keys.KEYBOARD_HEIGHT_MULTIPLIER] = multiplier }
+    }
+
+    suspend fun updateGestureDeleteEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.GESTURE_DELETE] = enabled }
+    }
+
+    suspend fun updateAdaptiveLearningEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.ADAPTIVE_LEARNING] = enabled }
+    }
+
+    suspend fun updateLanguage(languageCode: String) {
+        dataStore.edit { it[Keys.LANGUAGE] = languageCode }
+    }
+
     fun getSettingsSync(): KeyboardSettings = runBlocking {
         settingsFlow.first()
     }
@@ -81,6 +118,15 @@ class SettingsRepository(private val context: Context) {
         emojiRepeatStartIntervalMs = this[Keys.EMOJI_REPEAT_START_INTERVAL] ?: 110L,
         clipboardEnabled = this[Keys.CLIPBOARD_ENABLED] ?: true,
         showSuggestions = this[Keys.SHOW_SUGGESTIONS] ?: true,
+        swipeTypingEnabled = this[Keys.SWIPE_TYPING] ?: true,
+        autoCorrectEnabled = this[Keys.AUTO_CORRECT] ?: true,
+        showGrammarHints = this[Keys.GRAMMAR_HINTS] ?: true,
+        oneHandedMode = OneHandedMode.entries.find { it.name == this[Keys.ONE_HANDED_MODE] }
+            ?: OneHandedMode.OFF,
+        keyboardHeightMultiplier = this[Keys.KEYBOARD_HEIGHT_MULTIPLIER] ?: 1.0f,
+        gestureDeleteEnabled = this[Keys.GESTURE_DELETE] ?: true,
+        adaptiveLearningEnabled = this[Keys.ADAPTIVE_LEARNING] ?: true,
+        language = this[Keys.LANGUAGE] ?: "en",
     )
 
     private object Keys {
@@ -95,5 +141,13 @@ class SettingsRepository(private val context: Context) {
         val EMOJI_REPEAT_START_INTERVAL = longPreferencesKey("emoji_repeat_start_interval")
         val CLIPBOARD_ENABLED = booleanPreferencesKey("clipboard_enabled")
         val SHOW_SUGGESTIONS = booleanPreferencesKey("show_suggestions")
+        val SWIPE_TYPING = booleanPreferencesKey("swipe_typing")
+        val AUTO_CORRECT = booleanPreferencesKey("auto_correct")
+        val GRAMMAR_HINTS = booleanPreferencesKey("grammar_hints")
+        val ONE_HANDED_MODE = stringPreferencesKey("one_handed_mode")
+        val KEYBOARD_HEIGHT_MULTIPLIER = floatPreferencesKey("keyboard_height_multiplier")
+        val GESTURE_DELETE = booleanPreferencesKey("gesture_delete")
+        val ADAPTIVE_LEARNING = booleanPreferencesKey("adaptive_learning")
+        val LANGUAGE = stringPreferencesKey("language")
     }
 }

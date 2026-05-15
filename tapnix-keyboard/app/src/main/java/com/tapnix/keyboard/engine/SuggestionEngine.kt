@@ -1,26 +1,33 @@
 package com.tapnix.keyboard.engine
 
 import com.tapnix.keyboard.data.Suggestion
+import com.tapnix.keyboard.database.daos.BigramDao
 import com.tapnix.keyboard.database.daos.WordDao
+import com.tapnix.keyboard.database.entities.BigramEntity
 import com.tapnix.keyboard.database.entities.WordFrequencyEntity
 import kotlinx.coroutines.*
 
 /**
  * SuggestionEngine
  *
- * Generates next-word suggestions from a frequency database.
- * Falls back to built-in common English words for cold-start.
+ * Generates word suggestions combining:
+ *  1. Prefix-matching from the user's personal frequency database
+ *  2. Built-in common English words as cold-start fallback
+ *  3. Bigram next-word prediction ("after word X, word Y is likely")
  *
- * Design:
- *  - Runs on IO dispatcher — never blocks main thread
- *  - User-typed words are recorded and frequency-incremented
- *  - Results sorted by frequency descending (most-used first)
+ * All operations run on IO dispatcher — never blocks main thread.
+ *
+ * Adaptive Learning:
+ *   recordWord(prev, word) updates both unigram frequency and bigram pair,
+ *   so predictions personalise over time without any cloud dependency.
  */
 class SuggestionEngine(
     private val dao: WordDao,
+    private val bigramDao: BigramDao,
     private val ioScope: CoroutineScope,
     private val language: String = "en",
 ) {
+
     /**
      * Get up to 5 suggestions for the given word prefix.
      * Must be called from a suspend context on IO dispatcher.
@@ -33,7 +40,6 @@ class SuggestionEngine(
         if (dbResults.isNotEmpty()) {
             dbResults.map { Suggestion(it.word, it.frequency.toFloat()) }
         } else {
-            // Cold-start fallback — match against built-in word list
             COMMON_WORDS
                 .filter { it.startsWith(prefix.lowercase()) }
                 .take(5)
@@ -42,10 +48,26 @@ class SuggestionEngine(
     }
 
     /**
-     * Record that a word was committed. Updates existing frequency or
-     * inserts a new record. Fire-and-forget.
+     * Get next-word predictions based on the previously typed word.
+     * Returns up to 3 suggestions flagged as [Suggestion.isNextWord].
      */
-    fun recordWord(word: String) {
+    suspend fun getNextWordSuggestions(previousWord: String): List<Suggestion> =
+        withContext(Dispatchers.IO) {
+            if (previousWord.length < 2) return@withContext emptyList()
+            val bigrams = bigramDao.getFollowOns(
+                word1 = previousWord.lowercase(),
+                language = language,
+                limit = 3,
+            )
+            bigrams.map { Suggestion(it.word2, it.frequency.toFloat(), isNextWord = true) }
+        }
+
+    /**
+     * Record that [word] was committed. Updates unigram frequency.
+     * If [previousWord] is provided, also records the bigram pair.
+     * Fire-and-forget — does not block the caller.
+     */
+    fun recordWord(word: String, previousWord: String? = null) {
         if (word.length < 2) return
         val clean = word.lowercase().filter { it.isLetter() }
         if (clean.isEmpty()) return
@@ -55,15 +77,36 @@ class SuggestionEngine(
                 dao.insert(WordFrequencyEntity(word = clean, language = language))
             } catch (_: Exception) {}
             dao.incrementFrequency(clean, language)
+
+            if (previousWord != null && previousWord.length >= 2) {
+                val prev = previousWord.lowercase().filter { it.isLetter() }
+                if (prev.isNotEmpty()) {
+                    recordBigram(prev, clean)
+                }
+            }
+        }
+    }
+
+    private suspend fun recordBigram(word1: String, word2: String) {
+        try {
+            bigramDao.insert(
+                BigramEntity(word1 = word1, word2 = word2, language = language)
+            )
+        } catch (_: Exception) {}
+        bigramDao.incrementFrequency(word1, word2, language)
+
+        // Prune table if it grows too large (keep it under ~2000 entries)
+        val count = bigramDao.count()
+        if (count > 2000) {
+            bigramDao.pruneOldLowFrequency(count - 1800)
         }
     }
 
     /**
      * Called when the system signals memory pressure.
-     * Suggestions are fetched on-demand from Room; no hot cache to evict.
      */
     fun trimMemory(level: Int) {
-        // No in-memory suggestion cache to release.
+        // No in-memory cache to release.
     }
 
     companion object {

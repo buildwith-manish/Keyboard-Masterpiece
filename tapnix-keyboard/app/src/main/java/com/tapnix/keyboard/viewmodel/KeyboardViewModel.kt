@@ -2,14 +2,11 @@ package com.tapnix.keyboard.viewmodel
 
 import android.content.Context
 import android.view.inputmethod.EditorInfo
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.*
 import com.tapnix.keyboard.data.*
 import com.tapnix.keyboard.database.TapNixDatabase
-import com.tapnix.keyboard.engine.ClipboardEngine
-import com.tapnix.keyboard.engine.EmojiEngine
-import com.tapnix.keyboard.engine.LongPressConfig
-import com.tapnix.keyboard.engine.LongPressEngine
-import com.tapnix.keyboard.engine.SuggestionEngine
+import com.tapnix.keyboard.engine.*
 import com.tapnix.keyboard.settings.SettingsRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -21,10 +18,12 @@ import kotlinx.coroutines.flow.*
  * Exposes StateFlows consumed via collectAsStateWithLifecycle().
  *
  * Coordinates:
- *  - SuggestionEngine (word suggestions)
- *  - EmojiEngine      (categories, recents, search)
- *  - ClipboardEngine  (history, pin, paste)
- *  - LongPressEngine  (emoji spam / char repeat)
+ *  - SuggestionEngine  (word suggestions + bigram next-word prediction)
+ *  - GrammarEngine     (autocorrect, grammar hints)
+ *  - SwipeTypingEngine (swipe gesture word candidates)
+ *  - EmojiEngine       (categories, recents, search)
+ *  - ClipboardEngine   (history, pin, paste)
+ *  - LongPressEngine   (emoji spam / char repeat)
  *  - SettingsRepository
  */
 class KeyboardViewModel(
@@ -32,6 +31,8 @@ class KeyboardViewModel(
     val emojiEngine: EmojiEngine,
     val clipboardEngine: ClipboardEngine,
     private val settingsRepository: SettingsRepository,
+    private val grammarEngine: GrammarEngine = GrammarEngine(),
+    private val swipeEngine: SwipeTypingEngine = SwipeTypingEngine(),
 ) : ViewModel() {
 
     // ── Panel State ──────────────────────────────────────────────────────────
@@ -41,6 +42,20 @@ class KeyboardViewModel(
     // ── Suggestions ──────────────────────────────────────────────────────────
     private val _suggestions = MutableStateFlow<List<Suggestion>>(emptyList())
     val suggestions: StateFlow<List<Suggestion>> = _suggestions.asStateFlow()
+
+    // ── Swipe typing state ───────────────────────────────────────────────────
+    private val _swipePath = MutableStateFlow<List<Offset>>(emptyList())
+    val swipePath: StateFlow<List<Offset>> = _swipePath.asStateFlow()
+
+    private val _isSwipingActive = MutableStateFlow(false)
+    val isSwipingActive: StateFlow<Boolean> = _isSwipingActive.asStateFlow()
+
+    private val _swipeCandidates = MutableStateFlow<List<String>>(emptyList())
+    val swipeCandidates: StateFlow<List<String>> = _swipeCandidates.asStateFlow()
+
+    // ── Grammar / autocorrect ────────────────────────────────────────────────
+    private val _pendingAutocorrect = MutableStateFlow<GrammarEngine.Correction?>(null)
+    val pendingAutocorrect: StateFlow<GrammarEngine.Correction?> = _pendingAutocorrect.asStateFlow()
 
     // ── Emoji ────────────────────────────────────────────────────────────────
     val emojiCategories: StateFlow<List<EmojiCategory>> =
@@ -93,8 +108,9 @@ class KeyboardViewModel(
     // ── Long Press Engine ────────────────────────────────────────────────────
     private val longPressEngine = LongPressEngine(viewModelScope)
 
-    // ── Current composing word (for suggestions) ─────────────────────────────
+    // ── Composing word tracking ──────────────────────────────────────────────
     private var currentWord = StringBuilder()
+    private var previousWord = ""
 
     // ────────────────────────────────────────────────────────────────────────
     // Public API
@@ -122,16 +138,25 @@ class KeyboardViewModel(
             _shiftState.value = ShiftState.OFF
         }
 
-        // Update composing word for suggestions
         if (char.firstOrNull()?.isLetter() == true) {
             currentWord.append(char)
             updateSuggestions(currentWord.toString())
         } else {
             if (currentWord.isNotEmpty()) {
-                suggestionEngine.recordWord(currentWord.toString())
+                val committed = currentWord.toString()
+                val settings = settings.value
+                if (settings.adaptiveLearningEnabled && !isPasswordMode.value) {
+                    suggestionEngine.recordWord(committed, previousWord.ifEmpty { null })
+                }
+                previousWord = committed
             }
             currentWord.clear()
-            _suggestions.value = emptyList()
+            // After a space, show next-word suggestions if available
+            if (char == " " && previousWord.isNotEmpty()) {
+                updateNextWordSuggestions(previousWord)
+            } else {
+                _suggestions.value = emptyList()
+            }
         }
     }
 
@@ -143,7 +168,11 @@ class KeyboardViewModel(
     }
 
     fun onSuggestionChosen(text: String) {
-        suggestionEngine.recordWord(text)
+        val settings = settings.value
+        if (settings.adaptiveLearningEnabled && !isPasswordMode.value) {
+            suggestionEngine.recordWord(text, previousWord.ifEmpty { null })
+        }
+        previousWord = text
         currentWord.clear()
         _suggestions.value = emptyList()
     }
@@ -156,6 +185,98 @@ class KeyboardViewModel(
             val results = suggestionEngine.getSuggestions(prefix)
             _suggestions.value = results
         }
+    }
+
+    private fun updateNextWordSuggestions(previousWord: String) {
+        val settings = settings.value
+        if (!settings.showSuggestions || isPasswordMode.value) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val results = suggestionEngine.getNextWordSuggestions(previousWord)
+            if (results.isNotEmpty()) _suggestions.value = results
+        }
+    }
+
+    // ── Swipe typing ─────────────────────────────────────────────────────────
+
+    fun onSwipeStart(startPoint: Offset) {
+        val settings = settings.value
+        if (!settings.swipeTypingEnabled || isPasswordMode.value) return
+        _swipePath.value = listOf(startPoint)
+        _isSwipingActive.value = true
+        _swipeCandidates.value = emptyList()
+    }
+
+    fun onSwipeMove(point: Offset) {
+        if (!_isSwipingActive.value) return
+        _swipePath.value = _swipePath.value + point
+    }
+
+    fun onSwipeEnd(
+        keyboardWidth: Float,
+        keyboardRowHeight: Float,
+    ) {
+        if (!_isSwipingActive.value) return
+        val path = _swipePath.value
+        _isSwipingActive.value = false
+
+        if (path.size < 3) {
+            clearSwipeState()
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val userWords = _suggestions.value.map { it.text }
+            val candidates = swipeEngine.getSwipeCandidates(
+                path = path,
+                keyboardWidth = keyboardWidth,
+                keyboardRowHeight = keyboardRowHeight,
+                userWords = userWords,
+            )
+            _swipeCandidates.value = candidates
+            if (candidates.isNotEmpty()) {
+                _suggestions.value = candidates.map { Suggestion(it, 1f) }
+            }
+            // Keep path briefly for the fade-out animation, then clear
+            delay(400)
+            clearSwipeState()
+        }
+    }
+
+    fun commitSwipeWord(word: String) {
+        val settings = settings.value
+        if (settings.adaptiveLearningEnabled && !isPasswordMode.value) {
+            suggestionEngine.recordWord(word, previousWord.ifEmpty { null })
+        }
+        previousWord = word
+        currentWord.clear()
+        clearSwipeState()
+        _suggestions.value = emptyList()
+    }
+
+    private fun clearSwipeState() {
+        _swipePath.value = emptyList()
+        _swipeCandidates.value = emptyList()
+    }
+
+    // ── Grammar / autocorrect ─────────────────────────────────────────────────
+
+    fun checkAutocorrect(word: String) {
+        val settings = settings.value
+        if (!settings.autoCorrectEnabled || isPasswordMode.value || word.length < 3) return
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val correction = grammarEngine.getCorrection(word)
+            _pendingAutocorrect.value = correction
+        }
+    }
+
+    fun applyAutocorrect(correction: GrammarEngine.Correction) {
+        _pendingAutocorrect.value = null
+    }
+
+    fun dismissAutocorrect() {
+        _pendingAutocorrect.value = null
     }
 
     // ── Emoji ────────────────────────────────────────────────────────────────
@@ -190,7 +311,6 @@ class KeyboardViewModel(
         payload: String,
         onEmit: suspend (String) -> Unit,
     ) {
-        val cfg = settings.value
         longPressEngine.start(
             pointerId = pointerId,
             payload = payload,
@@ -235,19 +355,61 @@ class KeyboardViewModel(
         viewModelScope.launch { settingsRepository.updateShowSuggestions(enabled) }
     }
 
+    fun setSwipeTypingEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateSwipeTypingEnabled(enabled) }
+    }
+
+    fun setAutoCorrectEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateAutoCorrectEnabled(enabled) }
+    }
+
+    fun setShowGrammarHints(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateShowGrammarHints(enabled) }
+    }
+
+    fun setOneHandedMode(mode: OneHandedMode) {
+        viewModelScope.launch { settingsRepository.updateOneHandedMode(mode) }
+    }
+
+    fun setKeyboardHeightMultiplier(multiplier: Float) {
+        viewModelScope.launch { settingsRepository.updateKeyboardHeightMultiplier(multiplier) }
+    }
+
+    fun setGestureDeleteEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateGestureDeleteEnabled(enabled) }
+    }
+
+    fun setAdaptiveLearningEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateAdaptiveLearningEnabled(enabled) }
+    }
+
+    fun setLanguage(languageCode: String) {
+        viewModelScope.launch { settingsRepository.updateLanguage(languageCode) }
+    }
+
+    fun setClipboardEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateClipboardEnabled(enabled) }
+    }
+
     // ── IME Lifecycle ────────────────────────────────────────────────────────
     fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         if (!restarting) {
             currentWord.clear()
+            previousWord = ""
             _suggestions.value = emptyList()
             _emojiSearchQuery.value = ""
+            clearSwipeState()
+            _pendingAutocorrect.value = null
         }
     }
 
     fun onFinishInput() {
         cancelAllLongPress()
+        clearSwipeState()
+        _pendingAutocorrect.value = null
         if (currentWord.isNotEmpty()) {
-            suggestionEngine.recordWord(currentWord.toString())
+            val committed = currentWord.toString()
+            suggestionEngine.recordWord(committed, previousWord.ifEmpty { null })
             currentWord.clear()
         }
     }
@@ -271,10 +433,16 @@ class KeyboardViewModel(
             val settingsRepo = SettingsRepository(appContext)
             val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             return KeyboardViewModel(
-                suggestionEngine = SuggestionEngine(db.wordDao(), ioScope),
+                suggestionEngine = SuggestionEngine(
+                    dao = db.wordDao(),
+                    bigramDao = db.bigramDao(),
+                    ioScope = ioScope,
+                ),
                 emojiEngine = EmojiEngine(db.emojiDao(), ioScope),
                 clipboardEngine = ClipboardEngine(appContext, db.clipboardDao()),
                 settingsRepository = settingsRepo,
+                grammarEngine = GrammarEngine(),
+                swipeEngine = SwipeTypingEngine(),
             ) as T
         }
     }

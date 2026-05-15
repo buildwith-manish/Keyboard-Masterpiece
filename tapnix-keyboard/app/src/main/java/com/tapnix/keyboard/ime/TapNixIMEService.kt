@@ -5,10 +5,7 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import androidx.compose.runtime.Recomposer
-import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.compositionContext
 import androidx.lifecycle.*
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.savedstate.*
@@ -32,6 +29,11 @@ import kotlinx.coroutines.*
  *  - Password field detection (skips clipboard, hides suggestions)
  *  - Orientation changes (input view is re-created by the system)
  *  - Android 12–15 compatibility via standard API surface
+ *
+ * Extended helpers:
+ *  - deleteBackward(count)  → delete multiple characters (for autocorrect)
+ *  - deleteWordBackward()   → delete last word (for gesture delete)
+ *  - getSurroundingText()   → read preceding text (for grammar analysis)
  */
 class TapNixIMEService :
     InputMethodService(),
@@ -145,12 +147,53 @@ class TapNixIMEService :
     // Input Connection helpers — called from Compose UI on the main thread
     // ─────────────────────────────────────────────────────────────────────────
 
+    /** Commit a text string at the current cursor position. */
     fun commitText(text: String) {
         currentInputConnection?.commitText(text, 1)
     }
 
+    /** Delete one character before the cursor. */
     fun deleteBackward() {
         currentInputConnection?.deleteSurroundingText(1, 0)
+    }
+
+    /**
+     * Delete [count] characters before the cursor.
+     * Used by autocorrect to replace a misspelled word.
+     */
+    fun deleteBackward(count: Int) {
+        if (count <= 0) return
+        currentInputConnection?.deleteSurroundingText(count, 0)
+    }
+
+    /**
+     * Delete the entire word before the cursor (gesture-delete feature).
+     * Reads up to 50 chars of preceding text, finds the last word boundary,
+     * and removes everything from there to the cursor.
+     */
+    fun deleteWordBackward() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(50, 0)?.toString() ?: return
+        if (before.isEmpty()) return
+
+        // Trim trailing spaces first
+        val trimmed = before.trimEnd()
+        val toDelete = if (trimmed.isEmpty()) {
+            before.length
+        } else {
+            // Find the start of the last word
+            val lastSpaceIdx = trimmed.lastIndexOf(' ')
+            if (lastSpaceIdx < 0) trimmed.length else trimmed.length - lastSpaceIdx - 1
+        }
+        if (toDelete > 0) ic.deleteSurroundingText(toDelete, 0)
+    }
+
+    /**
+     * Read [maxChars] of text before the cursor.
+     * Used for grammar analysis and auto-capitalisation context.
+     */
+    fun getTextBeforeCursor(maxChars: Int = 100): String {
+        return currentInputConnection?.getTextBeforeCursor(maxChars, 0)?.toString() ?: ""
     }
 
     fun sendKeyEvent(keyCode: Int, action: Int = KeyEvent.ACTION_DOWN) {

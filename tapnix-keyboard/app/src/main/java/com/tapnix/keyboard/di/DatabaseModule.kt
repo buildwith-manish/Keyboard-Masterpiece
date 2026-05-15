@@ -2,6 +2,7 @@ package com.tapnix.keyboard.di
 
 import android.content.Context
 import com.tapnix.keyboard.database.TapNixDatabase
+import com.tapnix.keyboard.database.daos.BigramDao
 import com.tapnix.keyboard.database.daos.ClipboardDao
 import com.tapnix.keyboard.database.daos.EmojiDao
 import com.tapnix.keyboard.database.daos.WordDao
@@ -29,4 +30,7 @@ object DatabaseModule {
 
     @Provides
     fun provideWordDao(db: TapNixDatabase): WordDao = db.wordDao()
+
+    @Provides
+    fun provideBigramDao(db: TapNixDatabase): BigramDao = db.bigramDao()
 }

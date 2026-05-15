@@ -2,6 +2,7 @@ package com.tapnix.keyboard.ui.settings
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,14 +23,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tapnix.keyboard.data.KeyboardLanguage
 import com.tapnix.keyboard.data.KeyboardPanel
 import com.tapnix.keyboard.data.KeyboardTheme
+import com.tapnix.keyboard.data.OneHandedMode
 import com.tapnix.keyboard.ui.theme.LocalKeyboardTheme
 import com.tapnix.keyboard.viewmodel.KeyboardViewModel
 
 /**
  * SettingsPanel — inline settings accessible from the keyboard.
- * Shows theme picker, toggles, and a link to the full settings activity.
+ *
+ * Sections:
+ *  Theme picker (all 9 themes), Input toggles, Premium features,
+ *  Layout options (one-handed, height), Privacy, System link.
  */
 @Composable
 fun SettingsPanel(viewModel: KeyboardViewModel) {
@@ -66,11 +72,12 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(270.dp),
+                .height(290.dp),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // Theme Picker
+
+            // ── Theme Picker ───────────────────────────────────────────────
             item {
                 Text(
                     "Theme",
@@ -93,10 +100,8 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
                 }
             }
 
-            // Toggles
-            item {
-                SettingDivider(label = "Input", theme = theme)
-            }
+            // ── Input ──────────────────────────────────────────────────────
+            item { SettingDivider(label = "Input", theme = theme) }
 
             item {
                 SettingToggleRow(
@@ -119,7 +124,7 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
             item {
                 SettingToggleRow(
                     icon = Icons.Default.TextFields,
-                    label = "Auto capitalize",
+                    label = "Auto capitalise",
                     checked = settings.autoCapitalize,
                     onToggle = { viewModel.setAutoCapitalize(it) },
                     theme = theme,
@@ -144,6 +149,86 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
                 )
             }
 
+            // ── AI & Premium Features ──────────────────────────────────────
+            item { SettingDivider(label = "AI & Premium Features", theme = theme) }
+
+            item {
+                SettingToggleRow(
+                    icon = Icons.Default.Gesture,
+                    label = "Swipe typing",
+                    checked = settings.swipeTypingEnabled,
+                    onToggle = { viewModel.setSwipeTypingEnabled(it) },
+                    theme = theme,
+                )
+            }
+            item {
+                SettingToggleRow(
+                    icon = Icons.Default.AutoFixHigh,
+                    label = "Auto-correct",
+                    checked = settings.autoCorrectEnabled,
+                    onToggle = { viewModel.setAutoCorrectEnabled(it) },
+                    theme = theme,
+                )
+            }
+            item {
+                SettingToggleRow(
+                    icon = Icons.Default.Spellcheck,
+                    label = "Grammar hints",
+                    checked = settings.showGrammarHints,
+                    onToggle = { viewModel.setShowGrammarHints(it) },
+                    theme = theme,
+                )
+            }
+            item {
+                SettingToggleRow(
+                    icon = Icons.Default.Psychology,
+                    label = "Adaptive learning",
+                    checked = settings.adaptiveLearningEnabled,
+                    onToggle = { viewModel.setAdaptiveLearningEnabled(it) },
+                    theme = theme,
+                )
+            }
+            item {
+                SettingToggleRow(
+                    icon = Icons.Default.SwipeLeft,
+                    label = "Gesture delete word",
+                    checked = settings.gestureDeleteEnabled,
+                    onToggle = { viewModel.setGestureDeleteEnabled(it) },
+                    theme = theme,
+                )
+            }
+
+            // ── Language ───────────────────────────────────────────────────
+            item { SettingDivider(label = "Language", theme = theme) }
+
+            item {
+                LanguagePicker(
+                    currentCode = settings.language,
+                    onSelect = { viewModel.setLanguage(it) },
+                    theme = theme,
+                )
+            }
+
+            // ── Layout ─────────────────────────────────────────────────────
+            item { SettingDivider(label = "Layout", theme = theme) }
+
+            item {
+                OneHandedModePicker(
+                    current = settings.oneHandedMode,
+                    onSelect = { viewModel.setOneHandedMode(it) },
+                    theme = theme,
+                )
+            }
+
+            item {
+                HeightSlider(
+                    current = settings.keyboardHeightMultiplier,
+                    onChange = { viewModel.setKeyboardHeightMultiplier(it) },
+                    theme = theme,
+                )
+            }
+
+            // ── Privacy ────────────────────────────────────────────────────
             item { SettingDivider(label = "Privacy", theme = theme) }
 
             item {
@@ -160,11 +245,12 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
                     icon = Icons.Default.ContentPaste,
                     label = "Clipboard history",
                     checked = settings.clipboardEnabled,
-                    onToggle = { viewModel.setShowSuggestions(it) },
+                    onToggle = { viewModel.setClipboardEnabled(it) },
                     theme = theme,
                 )
             }
 
+            // ── System ─────────────────────────────────────────────────────
             item { SettingDivider(label = "System", theme = theme) }
 
             item {
@@ -186,6 +272,8 @@ fun SettingsPanel(viewModel: KeyboardViewModel) {
         }
     }
 }
+
+// ── Theme Chip ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ThemeChip(
@@ -232,6 +320,129 @@ private fun ThemeChip(
         )
     }
 }
+
+// ── Language Picker ───────────────────────────────────────────────────────────
+
+@Composable
+private fun LanguagePicker(
+    currentCode: String,
+    onSelect: (String) -> Unit,
+    theme: KeyboardTheme,
+) {
+    Column {
+        Text(
+            "Active language",
+            fontSize = 12.sp,
+            color = theme.keyText,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(KeyboardLanguage.entries) { lang ->
+                val selected = lang.code == currentCode
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelect(lang.code) },
+                    label = { Text(lang.label, fontSize = 11.sp) },
+                    modifier = Modifier.height(26.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = theme.accentColor,
+                        selectedLabelColor = theme.panelBackground,
+                        labelColor = theme.keyText,
+                        containerColor = theme.keyBackground.copy(alpha = 0.5f),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+// ── One-handed Mode Picker ────────────────────────────────────────────────────
+
+@Composable
+private fun OneHandedModePicker(
+    current: OneHandedMode,
+    onSelect: (OneHandedMode) -> Unit,
+    theme: KeyboardTheme,
+) {
+    Column {
+        Text(
+            "One-handed mode",
+            fontSize = 12.sp,
+            color = theme.keyText,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(
+                OneHandedMode.OFF   to "Off",
+                OneHandedMode.LEFT  to "◀ Left",
+                OneHandedMode.RIGHT to "Right ▶",
+            ).forEach { (mode, label) ->
+                val selected = mode == current
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelect(mode) },
+                    label = { Text(label, fontSize = 11.sp) },
+                    modifier = Modifier.height(26.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = theme.accentColor,
+                        selectedLabelColor = theme.panelBackground,
+                        labelColor = theme.keyText,
+                        containerColor = theme.keyBackground.copy(alpha = 0.5f),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+// ── Height Slider ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun HeightSlider(
+    current: Float,
+    onChange: (Float) -> Unit,
+    theme: KeyboardTheme,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Keyboard height",
+                fontSize = 12.sp,
+                color = theme.keyText,
+            )
+            Text(
+                text = when {
+                    current < 0.85f -> "Compact"
+                    current > 1.15f -> "Tall"
+                    else -> "Default"
+                },
+                fontSize = 11.sp,
+                color = theme.accentColor,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Slider(
+            value = current,
+            onValueChange = onChange,
+            valueRange = 0.7f..1.4f,
+            steps = 5,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = theme.accentColor,
+                activeTrackColor = theme.accentColor,
+                inactiveTrackColor = theme.keyText.copy(alpha = 0.2f),
+            ),
+        )
+    }
+}
+
+// ── Reusable components ───────────────────────────────────────────────────────
 
 @Composable
 private fun SettingToggleRow(

@@ -4,8 +4,17 @@ import androidx.compose.ui.graphics.Color
 
 // ── Keyboard Models ──────────────────────────────────────────────────────────
 
-enum class KeyboardPanel { QWERTY, NUMERIC, EMOJI, CLIPBOARD, SETTINGS }
+enum class KeyboardPanel { QWERTY, NUMERIC, EMOJI, CLIPBOARD, SETTINGS, GIF }
 enum class ShiftState { OFF, ON, CAPS_LOCK }
+enum class OneHandedMode { OFF, LEFT, RIGHT }
+enum class KeyboardLanguage(val code: String, val label: String) {
+    ENGLISH("en", "EN"),
+    SPANISH("es", "ES"),
+    FRENCH("fr", "FR"),
+    GERMAN("de", "DE"),
+    PORTUGUESE("pt", "PT"),
+    ITALIAN("it", "IT"),
+}
 
 data class KeyDef(
     val char: Char,
@@ -16,6 +25,8 @@ data class KeyDef(
 data class Suggestion(
     val text: String,
     val score: Float = 0f,
+    val isAutocorrect: Boolean = false,
+    val isNextWord: Boolean = false,
 )
 
 // ── Emoji Models ─────────────────────────────────────────────────────────────
@@ -80,7 +91,7 @@ data class KeyboardTheme(
 
         val Amoled = KeyboardTheme(
             id = "amoled",
-            name = "AMOLED Black",
+            name = "AMOLED",
             keyBackground = Color(0xFF1A1A1A),
             keyPressed = Color(0xFF333333),
             keyText = Color(0xFFFFFFFF),
@@ -95,7 +106,7 @@ data class KeyboardTheme(
 
         val Ocean = KeyboardTheme(
             id = "ocean",
-            name = "Ocean Blue",
+            name = "Ocean",
             keyBackground = Color(0xFF1565C0),
             keyPressed = Color(0xFF0D47A1),
             keyText = Color(0xFFFFFFFF),
@@ -110,7 +121,7 @@ data class KeyboardTheme(
 
         val Forest = KeyboardTheme(
             id = "forest",
-            name = "Forest Green",
+            name = "Forest",
             keyBackground = Color(0xFF2E7D32),
             keyPressed = Color(0xFF1B5E20),
             keyText = Color(0xFFFFFFFF),
@@ -140,7 +151,7 @@ data class KeyboardTheme(
 
         val Glass = KeyboardTheme(
             id = "glass",
-            name = "Glassmorphism",
+            name = "Glass",
             keyBackground = Color(0x33FFFFFF),
             keyPressed = Color(0x55FFFFFF),
             keyText = Color(0xFFFFFFFF),
@@ -153,7 +164,54 @@ data class KeyboardTheme(
             shadowElevation = 0f,
         )
 
-        val allThemes = listOf(Default, Amoled, Ocean, Forest, Candy, Glass)
+        // ── New Premium Themes ─────────────────────────────────────────────
+
+        val Sunset = KeyboardTheme(
+            id = "sunset",
+            name = "Sunset",
+            keyBackground = Color(0xFFBF360C),
+            keyPressed = Color(0xFF870000),
+            keyText = Color(0xFFFFFFFF),
+            panelBackground = Color(0xFF4A0000),
+            suggestionBarBackground = Color(0xFFD84315),
+            accentColor = Color(0xFFFFAB40),
+            keyCornerRadius = 10f,
+            enableBlur = false,
+            isAmoled = false,
+            shadowElevation = 3f,
+        )
+
+        val Midnight = KeyboardTheme(
+            id = "midnight",
+            name = "Midnight",
+            keyBackground = Color(0xFF1A237E),
+            keyPressed = Color(0xFF0D1257),
+            keyText = Color(0xFFE8EAF6),
+            panelBackground = Color(0xFF0A0E3D),
+            suggestionBarBackground = Color(0xFF1A237E),
+            accentColor = Color(0xFF7986CB),
+            keyCornerRadius = 12f,
+            enableBlur = false,
+            isAmoled = false,
+            shadowElevation = 4f,
+        )
+
+        val Neon = KeyboardTheme(
+            id = "neon",
+            name = "Neon",
+            keyBackground = Color(0xFF0D1117),
+            keyPressed = Color(0xFF1A1F2C),
+            keyText = Color(0xFF39FF14),
+            panelBackground = Color(0xFF060A0F),
+            suggestionBarBackground = Color(0xFF0D1117),
+            accentColor = Color(0xFF39FF14),
+            keyCornerRadius = 6f,
+            enableBlur = false,
+            isAmoled = true,
+            shadowElevation = 0f,
+        )
+
+        val allThemes = listOf(Default, Amoled, Ocean, Forest, Candy, Glass, Sunset, Midnight, Neon)
     }
 }
 
@@ -171,6 +229,15 @@ data class KeyboardSettings(
     val emojiRepeatStartIntervalMs: Long = 110L,
     val clipboardEnabled: Boolean = true,
     val showSuggestions: Boolean = true,
+    // ── Premium features ──────────────────────────────────────────────────
+    val swipeTypingEnabled: Boolean = true,
+    val autoCorrectEnabled: Boolean = true,
+    val showGrammarHints: Boolean = true,
+    val oneHandedMode: OneHandedMode = OneHandedMode.OFF,
+    val keyboardHeightMultiplier: Float = 1.0f,
+    val gestureDeleteEnabled: Boolean = true,
+    val adaptiveLearningEnabled: Boolean = true,
+    val language: String = KeyboardLanguage.ENGLISH.code,
 ) {
     companion object {
         val Default = KeyboardSettings()

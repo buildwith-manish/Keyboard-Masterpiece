@@ -1,12 +1,15 @@
 package com.tapnix.keyboard.di
 
 import android.content.Context
+import com.tapnix.keyboard.database.daos.BigramDao
 import com.tapnix.keyboard.database.daos.ClipboardDao
 import com.tapnix.keyboard.database.daos.EmojiDao
 import com.tapnix.keyboard.database.daos.WordDao
 import com.tapnix.keyboard.engine.ClipboardEngine
 import com.tapnix.keyboard.engine.EmojiEngine
+import com.tapnix.keyboard.engine.GrammarEngine
 import com.tapnix.keyboard.engine.SuggestionEngine
+import com.tapnix.keyboard.engine.SwipeTypingEngine
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,7 +46,20 @@ object EngineModule {
     @Provides
     @Singleton
     fun provideSuggestionEngine(
-        dao: WordDao,
+        wordDao: WordDao,
+        bigramDao: BigramDao,
         ioScope: CoroutineScope,
-    ): SuggestionEngine = SuggestionEngine(dao, ioScope)
+    ): SuggestionEngine = SuggestionEngine(
+        dao = wordDao,
+        bigramDao = bigramDao,
+        ioScope = ioScope,
+    )
+
+    @Provides
+    @Singleton
+    fun provideGrammarEngine(): GrammarEngine = GrammarEngine()
+
+    @Provides
+    @Singleton
+    fun provideSwipeTypingEngine(): SwipeTypingEngine = SwipeTypingEngine()
 }
