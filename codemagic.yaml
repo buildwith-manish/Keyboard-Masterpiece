@@ -1,0 +1,53 @@
+workflows:
+  tapnix-debug:
+    name: TapNix Keyboard — Debug Build
+    max_build_duration: 60
+    environment:
+      java: 17
+    working_directory: tapnix-keyboard
+    scripts:
+      - name: Set Gradle wrapper permissions
+        script: chmod +x gradlew
+      - name: Build debug APK
+        script: ./gradlew assembleDebug --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+    publishing:
+      email:
+        recipients:
+          - $CM_BUILD_EMAIL
+        notify:
+          success: true
+          failure: true
+
+  tapnix-release:
+    name: TapNix Keyboard — Release Build
+    max_build_duration: 60
+    environment:
+      java: 17
+      android_signing:
+        - tapnix_keystore
+      vars:
+        PACKAGE_NAME: com.tapnix.keyboard
+    working_directory: tapnix-keyboard
+    scripts:
+      - name: Set Gradle wrapper permissions
+        script: chmod +x gradlew
+      - name: Build release APK
+        script: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.injected.signing.store.file=$CM_KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - $CM_BUILD_EMAIL
+        notify:
+          success: true
+          failure: true
