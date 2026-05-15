@@ -213,11 +213,16 @@ private fun EmojiCategoryTabs(
         containerColor = theme.panelBackground,
         contentColor = theme.accentColor,
         edgePadding = 4.dp,
-        indicator = { tabPositions ->
+        indicator = @Composable { tabPositions ->
             if (selectedIndex < tabPositions.size) {
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
-                    color = theme.accentColor,
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .wrapContentSize(align = Alignment.BottomStart, unbounded = true)
+                        .offset(x = tabPositions[selectedIndex].left)
+                        .width(tabPositions[selectedIndex].width)
+                        .height(2.dp)
+                        .background(theme.accentColor)
                 )
             }
         },
