@@ -11,7 +11,7 @@ workflows:
       - name: Build debug APK
         script: ./gradlew assembleDebug --no-daemon --stacktrace
     artifacts:
-      - app/build/outputs/apk/debug/*.apk
+      - "app/build/outputs/apk/debug/*.apk"
 
   tapnix-release:
     name: TapNix Keyboard — Release Build
@@ -36,4 +36,4 @@ workflows:
             -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
     artifacts:
-      - app/build/outputs/apk/release/*.apk
+      - "app/build/outputs/apk/release/*.apk"
