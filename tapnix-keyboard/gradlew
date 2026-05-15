@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Copyright © 2015-2021 the original authors.
+# Gradle wrapper shell script for POSIX-compatible shells.
+#
+GRADLE_OPTS="${GRADLE_OPTS:-""} -Dorg.gradle.daemon=false"
+APP_NAME="Gradle"
+APP_BASE_NAME=$(basename "$0")
+APP_HOME=$(dirname "$(readlink -f "$0")" 2>/dev/null || cd "$(dirname "$0")" && pwd)
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+JAVA_EXE="${JAVA_HOME}/bin/java"
+exec "$JAVA_EXE" "${DEFAULT_JVM_OPTS}" ${GRADLE_OPTS} -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"

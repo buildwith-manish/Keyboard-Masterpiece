@@ -1,0 +1,49 @@
+package com.tapnix.keyboard.di
+
+import android.content.Context
+import com.tapnix.keyboard.database.daos.ClipboardDao
+import com.tapnix.keyboard.database.daos.EmojiDao
+import com.tapnix.keyboard.database.daos.WordDao
+import com.tapnix.keyboard.engine.ClipboardEngine
+import com.tapnix.keyboard.engine.EmojiEngine
+import com.tapnix.keyboard.engine.SuggestionEngine
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object EngineModule {
+
+    @Provides
+    @Singleton
+    fun provideIoScope(): CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Provides
+    @Singleton
+    fun provideClipboardEngine(
+        @ApplicationContext context: Context,
+        dao: ClipboardDao,
+    ): ClipboardEngine = ClipboardEngine(context, dao)
+
+    @Provides
+    @Singleton
+    fun provideEmojiEngine(
+        dao: EmojiDao,
+        ioScope: CoroutineScope,
+    ): EmojiEngine = EmojiEngine(dao, ioScope)
+
+    @Provides
+    @Singleton
+    fun provideSuggestionEngine(
+        dao: WordDao,
+        ioScope: CoroutineScope,
+    ): SuggestionEngine = SuggestionEngine(dao, ioScope)
+}
