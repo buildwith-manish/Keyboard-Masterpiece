@@ -46,7 +46,7 @@ class UserPreferences private constructor(
         private const val DEFAULT_HEIGHT_DELTA = 8
         private const val DEFAULT_LAYOUT_MODE = 0
         private const val DEFAULT_IS_RTL = false
-        private const val DEFAULT_LAST_LAYOUT_PANEL = Panel.QWERTY.name
+        private const val DEFAULT_LAST_LAYOUT_PANEL = "QWERTY"
 
         /**
          * FIX: FINAL-002 — Create encrypted SharedPreferences for sensitive data.
