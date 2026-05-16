@@ -1,0 +1,29 @@
+workflows:
+  android-debug-apk:
+    name: Keyboard Masterpiece Debug APK
+    max_build_duration: 60
+    environment:
+      java: 17
+      groups: []
+    scripts:
+      - name: Make Gradle executable
+        script: chmod +x ./gradlew
+      - name: Build debug APK
+        script: ./gradlew clean assembleDebug --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+      - app/build/reports/**
+
+  android-release-apk:
+    name: Keyboard Masterpiece Release APK
+    max_build_duration: 60
+    environment:
+      java: 17
+    scripts:
+      - name: Make Gradle executable
+        script: chmod +x ./gradlew
+      - name: Build unsigned release APK
+        script: ./gradlew clean assembleRelease --no-daemon --stacktrace
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/mapping/release/**

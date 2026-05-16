@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/colorSurface">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Keyboard Masterpiece"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Offline Android IME. Enable it in system keyboard settings, then select it as your input method."
+            android:textSize="16sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <Button
+            android:id="@+id/btn_enable_ime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Enable keyboard" />
+
+        <Button
+            android:id="@+id/btn_set_default"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Set as default input method" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/darkTheme"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Dark theme"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/numberRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Always show number row"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/haptics"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Haptic feedback"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/sounds"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sound feedback"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/incognito"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Incognito mode (no learning)"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_rtl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="RTL layout"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Font size"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <SeekBar
+            android:id="@+id/fontSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="12"
+            android:progress="4" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Key height"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <SeekBar
+            android:id="@+id/keyHeight"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="24"
+            android:progress="8" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Built-in controls: symbols, emoji search, clipboard, arrows, undo/redo, copy/cut/paste, select all, one-handed, floating and split layout modes are available from keyboard toolbar keys."
+            android:textSize="14sp"
+            android:textColor="?android:attr/textColorSecondary" />
+    </LinearLayout>
+</ScrollView>

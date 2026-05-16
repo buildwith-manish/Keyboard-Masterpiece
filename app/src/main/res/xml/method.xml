@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:isDefault="false"
+    android:settingsActivity="com.keyboardmasterpiece.settings.SettingsActivity"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype android:imeSubtypeLocale="en_US" android:imeSubtypeMode="keyboard" android:label="@string/ime_subtype_en" android:isAsciiCapable="true" />
+    <subtype android:imeSubtypeLocale="es_ES" android:imeSubtypeMode="keyboard" android:label="@string/ime_subtype_es" android:isAsciiCapable="true" />
+    <subtype android:imeSubtypeLocale="hi_IN" android:imeSubtypeMode="keyboard" android:label="@string/ime_subtype_hi" android:isAsciiCapable="true" />
+</input-method>

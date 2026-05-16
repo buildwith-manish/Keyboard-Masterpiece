@@ -1,0 +1,676 @@
+package com.keyboardmasterpiece.ime
+
+import android.content.Context
+import android.graphics.*
+import android.os.Handler
+import android.os.Looper
+import android.util.SparseArray
+import android.view.MotionEvent
+import android.view.View
+import com.keyboardmasterpiece.engine.*
+import com.keyboardmasterpiece.nativebridge.NativeGestureBridge
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
+
+/**
+ * PRODUCTION-GRADE OPTIMIZED KeyboardView
+ * FIX: HIGH-001 — Pre-allocated Paints, cached colors, themeDirty flag, postInvalidateOnAnimation, dirty rect invalidation
+ * FIX: HIGH-004 — Multi-touch support with SparseArray
+ * FIX: MED-001 — Cached dp values via MetricsCache
+ * FIX: MED-002 — Consistent SUGGESTION_HEIGHT_DP constant
+ * FIX: MED-003 — Visual feedback for suggestion taps
+ * FIX: MED-004 — Backspace repeat interval 50ms
+ * FIX: LOW-003 — Removed System.gc() from onLowMemory
+ * FIX: LOW-006 — ThemeConfig data class for all color values
+ * FIX: BUG-004 — Separate pre-allocated paints for key types instead of mutating shared keyPaint
+ * FIX: BUG-011 — Reset state flags in onDetachedFromWindow before removing handler callbacks
+ */
+class KeyboardView(context: Context) : View(context) {
+    interface Listener {
+        fun onKey(key: KeyboardKey)
+        fun onLongPress(key: KeyboardKey)
+        fun onSwipeWord(word: String)
+        fun onSpaceDrag(deltaChars: Int)
+        fun onSuggestion(text: String)
+    }
+
+    var listener: Listener? = null
+    var preferences: UserPreferences? = null
+    var layoutMode: LayoutMode = LayoutMode.FULL
+        set(value) {
+            if (field != value) {
+                field = value
+                needsLayout = true
+                postInvalidateOnAnimation() // FIX: HIGH-001 — Use postInvalidateOnAnimation
+            }
+        }
+
+    private var rows: List<List<KeyboardKey>> = emptyList()
+    private var panel = Panel.QWERTY
+    private var shifted = false
+    private var caps = false
+    private var incognito = false
+    private var suggestions = listOf<String>()
+
+    // FIX: HIGH-001 — All Paints pre-allocated in init block, NEVER in onDraw
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+    }
+    private val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
+    private val pathPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.2f
+    }
+    private val popupPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val suggestionHighlightPaint = Paint(Paint.ANTI_ALIAS_FLAG) // FIX: MED-003
+
+    // FIX: BUG-004 — Separate pre-allocated paints for each key type.
+    // Instead of mutating keyPaint.color with save/restore, use dedicated paints
+    // so there is no risk of corrupting a shared paint's state across draw calls.
+    private val normalKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val actionKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val spaceKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private val path = Path()
+    private val gesture = FloatArray(512)
+    private var gestureCount = 0
+
+    // FIX: HIGH-004 — Multi-touch support: track per-pointer state
+    private data class PointerState(
+        var downKey: KeyboardKey? = null,
+        var downTime: Long = 0L,
+        var downX: Float = 0f,
+        var downY: Float = 0f
+    )
+    private val pointerStates = SparseArray<PointerState>()
+
+    // Single primary pointer for gesture tracking (the first finger down)
+    private var primaryPointerId = -1
+    private var previewKey: KeyboardKey? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var repeatBackspace = false
+    private var needsLayout = true
+    private var cachedRowHeight = 0f
+    private var cachedStartX = 0f
+    private var cachedUsableWidth = 0f
+
+    // FIX: MED-003 — Pressed suggestion index for visual feedback
+    private var pressedSuggestionIndex = -1
+
+    // FIX: HIGH-001 — themeDirty flag; only update paint colors when theme changes
+    private var themeDirty = true
+    private var lastDarkTheme = false
+
+    // FIX: LOW-006 — ThemeConfig data class with all color values
+    data class ThemeConfig(
+        val bgColor: Int,
+        val keyColor: Int,
+        val actionKeyColor: Int,
+        val spaceKeyColor: Int,
+        val borderColor: Int,
+        val textColor: Int,
+        val accentColor: Int,
+        val pathColor: Int,
+        val popupColor: Int,
+        val suggestionHighlightColor: Int
+    )
+
+    private var currentTheme: ThemeConfig = lightTheme
+        set(value) {
+            if (field != value) {
+                field = value
+                themeDirty = true
+            }
+        }
+
+    private val lightTheme = ThemeConfig(
+        bgColor = Color.rgb(238, 241, 246),
+        keyColor = Color.WHITE,
+        actionKeyColor = Color.rgb(218, 224, 235),
+        spaceKeyColor = Color.WHITE,
+        borderColor = Color.rgb(210, 215, 225),
+        textColor = Color.rgb(24, 27, 32),
+        accentColor = Color.rgb(79, 124, 255),
+        pathColor = Color.argb(160, 79, 124, 255),
+        popupColor = Color.WHITE,
+        suggestionHighlightColor = Color.argb(40, 79, 124, 255)
+    )
+
+    private val darkThemeConfig = ThemeConfig(
+        bgColor = Color.rgb(21, 23, 28),
+        keyColor = Color.rgb(42, 45, 52),
+        actionKeyColor = Color.rgb(55, 59, 68),
+        spaceKeyColor = Color.rgb(48, 52, 60),
+        borderColor = Color.rgb(68, 72, 82),
+        textColor = Color.WHITE,
+        accentColor = Color.rgb(79, 124, 255),
+        pathColor = Color.argb(160, 79, 124, 255),
+        popupColor = Color.rgb(32, 34, 40),
+        suggestionHighlightColor = Color.argb(50, 79, 124, 255)
+    )
+
+    // FIX: MED-002 — Single constant for suggestion area height
+    companion object {
+        private const val SUGGESTION_HEIGHT_DP = 38
+        private const val BACKSPACE_REPEAT_INTERVAL_MS = 50L // FIX: MED-004 — was 45ms, now 50ms
+    }
+
+    // FIX: MED-001 — MetricsCache: cache all dp values in onSizeChanged
+    private inner class MetricsCache {
+        var gap: Float = 0f
+        var suggestionHeight: Float = 0f
+        var keyRadius: Float = 0f
+        var textLarge: Float = 0f
+        var textSmall: Float = 0f
+        var textSuggestion: Float = 0f
+        var textPreview: Float = 0f
+        var altHintOffsetX: Float = 0f
+        var altHintOffsetY: Float = 0f
+        var previewWidth: Float = 0f
+        var previewHeight: Float = 0f
+        var previewRadius: Float = 0f
+        var previewBottomPad: Float = 0f
+        var previewTopPad: Float = 0f
+        var spaceDragThreshold: Float = 0f
+        var spaceDragUnit: Float = 0f
+        var longPressCancelDistance: Float = 0f
+        var swipeThreshold: Float = 0f
+        var density: Float = 0f
+
+        fun recalculate() {
+            density = resources.displayMetrics.density
+            gap = dpF(4)
+            suggestionHeight = dpF(SUGGESTION_HEIGHT_DP)
+            keyRadius = dpF(9)
+            textLarge = dpF(21)
+            textSmall = dpF(15)
+            textSuggestion = dpF(16)
+            textPreview = dpF(32)
+            altHintOffsetX = dpF(9)
+            altHintOffsetY = dpF(14)
+            previewWidth = dpF(32)
+            previewHeight = dpF(68)
+            previewBottomPad = dpF(8)
+            previewTopPad = dpF(8)
+            previewRadius = dpF(12)
+            spaceDragThreshold = dpF(18)
+            spaceDragUnit = dpF(28)
+            longPressCancelDistance = dpF(22)
+            swipeThreshold = dpF(65)
+        }
+    }
+
+    private val metrics = MetricsCache()
+
+    private val longPress = Runnable {
+        val state = pointerStates.get(primaryPointerId) ?: return@Runnable
+        state.downKey?.let {
+            previewKey = it
+            listener?.onLongPress(it)
+            if (it.code == KeyCodes.BACKSPACE) startBackspaceRepeat()
+        }
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    // FIX: MED-004 — Repeat interval 50ms instead of 45ms
+    private val repeatRunnable = object : Runnable {
+        override fun run() {
+            if (repeatBackspace) {
+                listener?.onKey(KeyboardKey("", code = KeyCodes.BACKSPACE))
+                handler.postDelayed(this, BACKSPACE_REPEAT_INTERVAL_MS)
+            }
+        }
+    }
+
+    init {
+        isHapticFeedbackEnabled = false
+        setLayerType(LAYER_TYPE_HARDWARE, null)
+        setBackgroundColor(Color.TRANSPARENT)
+    }
+
+    fun setKeys(keys: List<List<KeyboardKey>>, p: Panel, sh: Boolean, ca: Boolean, incog: Boolean) {
+        rows = keys
+        panel = p
+        shifted = sh
+        caps = ca
+        incognito = incog
+        needsLayout = true
+        requestLayout()
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    fun setSuggestions(list: List<String>) {
+        suggestions = if (list.isEmpty()) {
+            listOf(if (incognito) "Incognito mode" else "")
+        } else list.take(3)
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        needsLayout = true
+        metrics.recalculate() // FIX: MED-001 — Cache dp values on size change
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val delta = preferences?.keyHeightDelta ?: 8
+        val rowH = dp(42 + delta)
+        val totalRows = rows.size + 1 // +1 for suggestions/candidates
+        val h = rowH * totalRows + paddingTop + paddingBottom
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), h.coerceAtMost(MeasureSpec.getSize(heightMeasureSpec)))
+    }
+
+    override fun onDraw(c: Canvas) {
+        if (needsLayout) performLayout()
+
+        // FIX: HIGH-001 — Only update paint colors when theme changes (themeDirty flag)
+        val dark = preferences?.darkTheme == true
+        if (dark != lastDarkTheme) {
+            lastDarkTheme = dark
+            themeDirty = true
+        }
+        if (themeDirty) {
+            currentTheme = if (dark) darkThemeConfig else lightTheme
+            updatePaints()
+            themeDirty = false
+        }
+
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+        drawSuggestions(c)
+        for (row in rows) for (key in row) drawKey(c, key)
+        if (!path.isEmpty) c.drawPath(path, pathPaint)
+        previewKey?.let { drawPreview(c, it) }
+    }
+
+    private fun performLayout() {
+        val gap = metrics.gap
+        val top = metrics.suggestionHeight // FIX: MED-002 — Use consistent SUGGESTION_HEIGHT_DP
+        val availableHeight = height - top
+        cachedRowHeight = (availableHeight / max(1, rows.size)).toFloat()
+        cachedUsableWidth = when (layoutMode) {
+            LayoutMode.ONE_HANDED_LEFT, LayoutMode.ONE_HANDED_RIGHT -> width * 0.78f
+            LayoutMode.FLOATING -> width * 0.72f
+            else -> width.toFloat()
+        }
+        cachedStartX = when (layoutMode) {
+            LayoutMode.ONE_HANDED_RIGHT -> width - cachedUsableWidth
+            LayoutMode.FLOATING -> (width - cachedUsableWidth) / 2f
+            else -> 0f
+        }
+
+        val totalGap = gap * (rows.firstOrNull()?.size?.plus(1) ?: 2)
+
+        rows.forEachIndexed { ri, row ->
+            val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
+            var x = cachedStartX + gap
+            val y = top + ri * cachedRowHeight + gap
+            val keyH = cachedRowHeight - gap * 2
+
+            row.forEachIndexed { idx, key ->
+                val kw = (cachedUsableWidth - totalGap) * key.weight / totalWeight
+                if (layoutMode == LayoutMode.SPLIT && ri < rows.lastIndex && row.size > 6 && idx == row.size / 2) {
+                    x += width * 0.12f
+                }
+                @Suppress("DEPRECATION") // FIX: INFO-003 — Still using rect for backward compat
+                key.rect.set(x, y, x + kw, y + keyH)
+                x += kw + gap
+            }
+        }
+        needsLayout = false
+    }
+
+    /**
+     * FIX: HIGH-001 — updatePaints reads from ThemeConfig, only called when themeDirty.
+     * FIX: LOW-006 — All colors come from ThemeConfig, no hardcoded colors.
+     * FIX: BUG-004 — Also update the separate key-type paints.
+     */
+    private fun updatePaints() {
+        val theme = currentTheme
+        bgPaint.color = theme.bgColor
+        keyPaint.color = theme.keyColor
+        borderPaint.color = theme.borderColor
+        textPaint.color = theme.textColor
+        smallPaint.color = theme.accentColor
+        pathPaint.color = theme.pathColor
+        suggestionHighlightPaint.color = theme.suggestionHighlightColor
+
+        // FIX: BUG-004 — Update separate key-type paints from theme
+        normalKeyPaint.color = theme.keyColor
+        actionKeyPaint.color = theme.actionKeyColor
+        spaceKeyPaint.color = theme.spaceKeyColor
+    }
+
+    /**
+     * FIX: MED-002 — Use SUGGESTION_HEIGHT_DP consistently.
+     * FIX: MED-003 — Draw highlight for pressed suggestion.
+     * FIX: MED-001 — Use cached metrics instead of calling dp() in onDraw.
+     * FIX: HIGH-001 — No paint color reassignment in draw methods.
+     */
+    private fun drawSuggestions(c: Canvas) {
+        val h = metrics.suggestionHeight
+        val segmentWidth = width / 3f
+        textPaint.textSize = metrics.textSuggestion
+        textPaint.typeface = Typeface.DEFAULT_BOLD
+
+        for (i in 0 until 3) {
+            // FIX: MED-003 — Draw highlight for pressed suggestion
+            if (i == pressedSuggestionIndex) {
+                c.drawRect(segmentWidth * i, 0f, segmentWidth * (i + 1), h, suggestionHighlightPaint)
+            }
+
+            val s = suggestions.getOrNull(i).orEmpty()
+            if (s.isNotEmpty()) {
+                val x = segmentWidth * i + segmentWidth / 2
+                val baseline = h / 2 - (textPaint.ascent() + textPaint.descent()) / 2
+                c.drawText(s, x, baseline, textPaint)
+            }
+        }
+        textPaint.typeface = Typeface.DEFAULT
+    }
+
+    /**
+     * FIX: BUG-004 — Use separate pre-allocated paints for each key type instead of
+     * mutating the shared keyPaint.color with save/restore. This eliminates the risk
+     * of corrupting the paint state if draw calls overlap or are interrupted.
+     * FIX: MED-001 — Use cached metrics.
+     * FIX: LOW-006 — All colors from ThemeConfig.
+     */
+    private fun drawKey(c: Canvas, key: KeyboardKey) {
+        @Suppress("DEPRECATION")
+        val r = key.rect
+        val rad = metrics.keyRadius
+
+        // FIX: BUG-004 — Select the correct pre-allocated paint per key type
+        val paint = when {
+            key.isAction -> actionKeyPaint
+            key.code == KeyCodes.SPACE -> spaceKeyPaint
+            else -> normalKeyPaint
+        }
+        c.drawRoundRect(r, rad, rad, paint)
+        c.drawRoundRect(r, rad, rad, borderPaint)
+
+        val fontSize = if (key.label.length > 3) metrics.textSmall else metrics.textLarge
+        textPaint.textSize = fontSize
+        val y = r.centerY() - (textPaint.ascent() + textPaint.descent()) / 2 + 1f
+        c.drawText(key.label, r.centerX(), y, textPaint)
+
+        if (key.alt.isNotEmpty()) {
+            smallPaint.textSize = dp(10).toFloat()
+            c.drawText(key.alt.first().toString(), r.right - metrics.altHintOffsetX, r.top + metrics.altHintOffsetY, smallPaint)
+        }
+    }
+
+    /**
+     * FIX: HIGH-001 — No paint allocation in drawPreview.
+     * FIX: MED-001 — Use cached metrics.
+     */
+    private fun drawPreview(c: Canvas, key: KeyboardKey) {
+        if (key.label.length > 3) return
+        @Suppress("DEPRECATION")
+        val r = key.rect
+
+        val theme = currentTheme
+        val savedPopupColor = popupPaint.color
+        popupPaint.color = theme.popupColor
+
+        val pr = RectF(
+            r.centerX() - metrics.previewWidth,
+            r.top - metrics.previewHeight,
+            r.centerX() + metrics.previewWidth,
+            r.top - metrics.previewBottomPad
+        )
+        c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, popupPaint)
+        c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, borderPaint)
+        popupPaint.color = savedPopupColor
+
+        textPaint.textSize = metrics.textPreview
+        val baseline = pr.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
+        c.drawText(key.label, pr.centerX(), baseline, textPaint)
+    }
+
+    /**
+     * FIX: HIGH-004 — Multi-touch support.
+     * Track multiple pointers via SparseArray<PointerState>.
+     * Handle ACTION_POINTER_DOWN and ACTION_POINTER_UP.
+     */
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> handleDown(e, 0)
+            MotionEvent.ACTION_POINTER_DOWN -> { // FIX: HIGH-004
+                val idx = e.actionIndex
+                handleDown(e, idx)
+            }
+            MotionEvent.ACTION_MOVE -> handleMove(e)
+            MotionEvent.ACTION_UP -> handleUp(e, 0)
+            MotionEvent.ACTION_POINTER_UP -> { // FIX: HIGH-004
+                val idx = e.actionIndex
+                handleUp(e, idx)
+            }
+            MotionEvent.ACTION_CANCEL -> handleCancel()
+        }
+        return true
+    }
+
+    /**
+     * FIX: HIGH-004 — Handle pointer down for multi-touch.
+     * FIX: MED-003 — Detect suggestion area taps in handleDown.
+     */
+    private fun handleDown(e: MotionEvent, pointerIndex: Int) {
+        val pointerId = e.getPointerId(pointerIndex)
+        val x = e.getX(pointerIndex)
+        val y = e.getY(pointerIndex)
+
+        val state = PointerState(
+            downKey = hitTest(x, y),
+            downTime = System.currentTimeMillis(),
+            downX = x,
+            downY = y
+        )
+        pointerStates.put(pointerId, state)
+
+        // First pointer is the primary for gesture tracking
+        if (primaryPointerId == -1) {
+            primaryPointerId = pointerId
+            previewKey = state.downKey
+            gestureCount = 0
+            path.reset()
+            addGesturePoint(x, y)
+
+            state.downKey?.let { key ->
+                handler.postDelayed(longPress, 280)
+                if (key.code == KeyCodes.BACKSPACE) {
+                    handler.postDelayed({ startBackspaceRepeat() }, 480)
+                }
+            }
+        }
+
+        // FIX: MED-003 — Detect suggestion area tap
+        if (y < metrics.suggestionHeight) {
+            val idx = (x / (width / 3f)).toInt().coerceIn(0, 2)
+            pressedSuggestionIndex = idx
+        } else {
+            pressedSuggestionIndex = -1
+        }
+
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    private fun handleMove(e: MotionEvent) {
+        val state = pointerStates.get(primaryPointerId) ?: return
+        val i = e.findPointerIndex(primaryPointerId)
+        if (i < 0) return
+        val x = e.getX(i)
+        val y = e.getY(i)
+        addGesturePoint(x, y)
+
+        state.downKey?.let { dk ->
+            if (dk.code == KeyCodes.SPACE && kotlin.math.abs(x - state.downX) > metrics.spaceDragThreshold) {
+                val delta = ((x - state.downX) / metrics.spaceDragUnit).toInt()
+                listener?.onSpaceDrag(delta)
+                state.downX = x
+            }
+        }
+
+        if (distance(x, y, state.downX, state.downY) > metrics.longPressCancelDistance) {
+            handler.removeCallbacks(longPress)
+            previewKey = null
+        }
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    /**
+     * FIX: HIGH-004 — Handle pointer up for multi-touch.
+     * FIX: MED-002 — Use SUGGESTION_HEIGHT_DP consistently.
+     * FIX: MED-003 — Clear pressed suggestion highlight on up.
+     */
+    private fun handleUp(e: MotionEvent, pointerIndex: Int) {
+        val pointerId = e.getPointerId(pointerIndex)
+        val state = pointerStates.get(pointerId) ?: return
+        val x = e.getX(pointerIndex)
+        val y = e.getY(pointerIndex)
+
+        if (pointerId == primaryPointerId) {
+            handler.removeCallbacks(longPress)
+            repeatBackspace = false
+            handler.removeCallbacks(repeatRunnable)
+
+            val finalKey = hitTest(x, y) ?: state.downKey
+            val movedDistance = distance(x, y, state.downX, state.downY)
+
+            when {
+                movedDistance > metrics.swipeThreshold && panel == Panel.QWERTY && state.downKey?.code != KeyCodes.SPACE -> {
+                    val word = NativeGestureBridge.classify(gesture, gestureCount)
+                    listener?.onSwipeWord(word)
+                }
+                y < metrics.suggestionHeight -> { // FIX: MED-002 — Use consistent SUGGESTION_HEIGHT_DP
+                    val idx = (x / (width / 3f)).toInt().coerceIn(0, 2)
+                    listener?.onSuggestion(suggestions.getOrNull(idx).orEmpty())
+                }
+                finalKey != null -> listener?.onKey(finalKey)
+            }
+
+            previewKey = null
+            path.reset()
+            primaryPointerId = -1
+
+            // If another pointer is still down, promote it to primary
+            for (i in 0 until pointerStates.size()) {
+                val otherId = pointerStates.keyAt(i)
+                if (otherId != pointerId) {
+                    primaryPointerId = otherId
+                    break
+                }
+            }
+        }
+
+        pointerStates.remove(pointerId)
+
+        // FIX: MED-003 — Clear suggestion highlight
+        pressedSuggestionIndex = -1
+
+        postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    private fun handleCancel() {
+        handler.removeCallbacks(longPress)
+        repeatBackspace = false
+        handler.removeCallbacks(repeatRunnable)
+        pointerStates.clear()
+        primaryPointerId = -1
+        previewKey = null
+        pressedSuggestionIndex = -1
+        path.reset()
+        postInvalidateOnAnimation()
+    }
+
+    /**
+     * FIX: HIGH-001 — Single-key invalidation method for dirty rect invalidation.
+     */
+    fun invalidateKey(key: KeyboardKey) {
+        @Suppress("DEPRECATION")
+        val r = key.rect
+        postInvalidateOnAnimation(
+            r.left.toInt() - 2,
+            r.top.toInt() - 2,
+            (r.right + 2).toInt(),
+            (r.bottom + 2).toInt()
+        )
+    }
+
+    private fun hitTest(x: Float, y: Float): KeyboardKey? {
+        for (row in rows) {
+            for (key in row) {
+                @Suppress("DEPRECATION")
+                if (key.rect.contains(x.toInt(), y.toInt())) return key
+            }
+        }
+        return null
+    }
+
+    private fun addGesturePoint(x: Float, y: Float) {
+        if (gestureCount < 250) {
+            val idx = gestureCount * 2
+            gesture[idx] = x
+            gesture[idx + 1] = y
+            if (gestureCount == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            gestureCount++
+        }
+    }
+
+    private fun startBackspaceRepeat() {
+        repeatBackspace = true
+        handler.post(repeatRunnable)
+    }
+
+    private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+        val dx = x1 - x2
+        val dy = y1 - y2
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+
+    /** FIX: MED-001 — Float version of dp for metrics cache. */
+    private fun dpF(v: Int): Float = v * resources.displayMetrics.density
+
+    /**
+     * FIX: BUG-011 — Reset state flags BEFORE removing handler callbacks.
+     * If we remove callbacks first, pending runnables that reference these flags
+     * could still be mid-execution or the state could be inconsistent. Resetting
+     * the flags first ensures a clean state when the view detaches.
+     */
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        // FIX: BUG-011 — Reset state flags before removing handler callbacks
+        repeatBackspace = false
+        primaryPointerId = -1
+        pressedSuggestionIndex = -1
+
+        handler.removeCallbacksAndMessages(null)
+        path.reset()
+        previewKey = null
+        pointerStates.clear()
+    }
+
+    /**
+     * FIX: LOW-003 — Removed System.gc() call. Just clear the suggestions list.
+     * Calling System.gc() is discouraged; the VM manages memory and explicit GC
+     * requests can cause jank and unpredictable pauses.
+     */
+    fun onLowMemory() {
+        suggestions = emptyList()
+    }
+}
