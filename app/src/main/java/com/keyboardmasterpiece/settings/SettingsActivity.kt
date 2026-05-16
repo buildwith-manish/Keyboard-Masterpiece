@@ -70,9 +70,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun applyTheme() {
         if (prefs.darkTheme) {
-            setTheme(android.R.style.Theme_DeviceDefault)
+            setTheme(R.style.AppTheme_Dark)
         } else {
-            setTheme(android.R.style.Theme_DeviceDefault_Light)
+            setTheme(R.style.AppTheme)
         }
     }
 }
