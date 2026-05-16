@@ -18,6 +18,7 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import com.keyboardmasterpiece.engine.*
+import com.keyboardmasterpiece.settings.SettingsActivity
 import kotlin.math.max
 
 /**
@@ -42,6 +43,9 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     // FIX: BUG-003 — BroadcastReceiver for ACTION_USER_UNLOCKED to upgrade prefs
     private var unlockReceiver: BroadcastReceiver? = null
+
+    // Store inputView reference since InputMethodService.inputView was removed in API 35
+    private var currentKeyboardView: KeyboardView? = null
 
     // State that survives configuration changes/process death where possible
     private var currentPanel = Panel.QWERTY
@@ -121,7 +125,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         try {
             prefs = UserPreferences.create(this)
             // Rebuild suggestion engine with the new prefs (which may have more personal words)
-            suggestions.shutdown()
+            currentKeyboardView = null
+        suggestions.shutdown()
             suggestions = SuggestionEngine(prefs)
         } catch (_: Exception) {
             // If upgrade fails, keep using boot-safe prefs
@@ -130,6 +135,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     override fun onCreateInputView(): View {
         return KeyboardView(this).also { view ->
+            currentKeyboardView = view
             view.listener = this
             applyCurrentPreferencesToView(view)
             refreshKeyboardLayout()
@@ -166,7 +172,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         // FIX: CRIT-001 — Restore the listener every time the view starts
-        (inputView as? KeyboardView)?.listener = this
+        currentKeyboardView?.listener = this
         refreshKeyboardLayout()
     }
 
@@ -214,7 +220,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             outInsets.contentTopInsets = 0
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_VISIBLE
         } else {
-            (inputView as? KeyboardView)?.height?.let { h ->
+            currentKeyboardView?.height?.let { h ->
                 outInsets.contentTopInsets = h
                 outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_VISIBLE
             }
@@ -237,7 +243,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_MODERATE) {
-            (inputView as? KeyboardView)?.onLowMemory()
+            currentKeyboardView?.onLowMemory()
             suggestions.clearCacheIfNeeded()
             if (level >= TRIM_MEMORY_COMPLETE) {
                 undoStack.clear()
@@ -510,11 +516,11 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     private fun updateSuggestions() {
         if (isPasswordField || prefs.incognito) {
-            (inputView as? KeyboardView)?.setSuggestions(emptyList())
+            currentKeyboardView?.setSuggestions(emptyList())
             return
         }
 
-        val view = inputView as? KeyboardView ?: return
+        val view = currentKeyboardView ?: return
         val word = if (isComposing) composingText.toString() else currentWord(currentInputConnection ?: return)
         suggestions.suggestAsync(word, previousWord) { list ->
             view.post {
@@ -524,7 +530,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     }
 
     private fun refreshKeyboardLayout() {
-        (inputView as? KeyboardView)?.apply {
+        currentKeyboardView?.apply {
             this.preferences = prefs
             this.layoutMode = LayoutMode.entries.getOrElse(prefs.layoutModeOrdinal) { LayoutMode.FULL }
             val keys = KeyboardLayoutFactory.layout(
