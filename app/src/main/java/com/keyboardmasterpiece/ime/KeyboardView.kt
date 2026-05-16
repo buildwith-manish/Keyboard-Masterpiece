@@ -134,14 +134,6 @@ class KeyboardView(context: Context) : View(context) {
         val suggestionHighlightColor: Int
     )
 
-    private var currentTheme: ThemeConfig = lightTheme
-        set(value) {
-            if (field != value) {
-                field = value
-                themeDirty = true
-            }
-        }
-
     private val lightTheme = ThemeConfig(
         bgColor = Color.rgb(238, 241, 246),
         keyColor = Color.WHITE,
@@ -167,6 +159,14 @@ class KeyboardView(context: Context) : View(context) {
         popupColor = Color.rgb(32, 34, 40),
         suggestionHighlightColor = Color.argb(50, 79, 124, 255)
     )
+
+    private var currentTheme: ThemeConfig = lightTheme
+        set(value) {
+            if (field != value) {
+                field = value
+                themeDirty = true
+            }
+        }
 
     // FIX: MED-002 — Single constant for suggestion area height
     companion object {
@@ -638,7 +638,7 @@ class KeyboardView(context: Context) : View(context) {
         for (row in rows) {
             for (key in row) {
                 @Suppress("DEPRECATION")
-                if (key.rect.contains(x.toInt(), y.toInt())) return key
+                if (key.rect.contains(x, y)) return key
             }
         }
         return null
