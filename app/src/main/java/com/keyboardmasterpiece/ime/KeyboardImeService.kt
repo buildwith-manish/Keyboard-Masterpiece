@@ -97,19 +97,20 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                     }
                 }
             }
-            registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
+            // FIX: FINAL-004 — Use RECEIVER_NOT_EXPORTED on API 33+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED), Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
+            }
         }
     }
 
     // FIX: BUG-003 — Check device unlock state and upgrade prefs if already unlocked
     private fun checkDeviceUnlockedAndUpgradePrefs() {
         val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        val unlocked = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            !km.isDeviceLocked
-        } else {
-            @Suppress("DEPRECATION")
-            !km.isKeyguardLocked
-        }
+        // FIX: FINAL-008 — minSdk is 26 (LOLLIPOP_MR1 is 22), so isDeviceLocked is always available
+        val unlocked = !km.isDeviceLocked
         if (unlocked) {
             upgradeToCredentialPrefs()
         }
@@ -746,12 +747,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     private fun vibrateTick() {
         val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(12)
-        }
+        // FIX: FINAL-008 — minSdk is 26 (O is 26), so VibrationEffect is always available
+        vibrator.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private fun playClick(code: Int) {

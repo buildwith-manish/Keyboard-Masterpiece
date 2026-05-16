@@ -46,6 +46,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="Dark theme"
+            android:contentDescription="Toggle dark theme"
             android:textColor="?android:attr/textColorPrimary" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -53,6 +54,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Always show number row"
+            android:contentDescription="Toggle number row"
             android:textColor="?android:attr/textColorPrimary" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -60,6 +62,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Haptic feedback"
+            android:contentDescription="Toggle haptic feedback"
             android:textColor="?android:attr/textColorPrimary" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -67,6 +70,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Sound feedback"
+            android:contentDescription="Toggle sound feedback"
             android:textColor="?android:attr/textColorPrimary" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -74,6 +78,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Incognito mode (no learning)"
+            android:contentDescription="Toggle incognito mode"
             android:textColor="?android:attr/textColorPrimary" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -81,6 +86,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="RTL layout"
+            android:contentDescription="Toggle RTL layout"
             android:textColor="?android:attr/textColorPrimary" />
 
         <TextView
@@ -94,6 +100,7 @@
             android:id="@+id/fontSize"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:contentDescription="Adjust font size"
             android:max="12"
             android:progress="4" />
 
@@ -107,6 +114,7 @@
             android:id="@+id/keyHeight"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:contentDescription="Adjust key height"
             android:max="24"
             android:progress="8" />
 

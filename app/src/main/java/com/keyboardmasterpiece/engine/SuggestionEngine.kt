@@ -14,6 +14,8 @@ import kotlin.math.min
  * FIX: MED-006 — Consistent MAX_PERSONAL_WORDS constant from UserPreferences.
  * FIX: BUG-001 — TrieDictionary.clear() now atomically replaces root via AtomicReference.
  * FIX: BUG-010 — Debounce suggestAsync() to avoid flooding the background thread.
+ * FIX: FINAL-003 — Thread-safe Trie insert with @Synchronized.
+ * FIX: FINAL-006 — Use StringBuilder in collectWords to avoid O(n²) string concatenation.
  */
 class SuggestionEngine(private val prefs: UserPreferences) {
 
@@ -198,6 +200,8 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         // FIX: BUG-001 — Use AtomicReference for root so clear() can atomically replace it
         private val rootRef = AtomicReference(TrieNode())
 
+        /** FIX: FINAL-003 — Thread-safe insert with @Synchronized */
+        @Synchronized
         fun insert(word: String) {
             var node = rootRef.get()
             for (char in word) {
@@ -216,17 +220,20 @@ class SuggestionEngine(private val prefs: UserPreferences) {
                 node = node.getChild(char) ?: return emptyList()
             }
             val results = mutableListOf<String>()
-            collectWords(node, prefix, results, maxResults)
+            collectWords(node, StringBuilder(prefix), results, maxResults)
             return results
         }
 
-        private fun collectWords(node: TrieNode, current: String, results: MutableList<String>, maxResults: Int) {
+        /** FIX: FINAL-006 — Use StringBuilder to avoid O(n²) string concatenation */
+        private fun collectWords(node: TrieNode, current: StringBuilder, results: MutableList<String>, maxResults: Int) {
             if (results.size >= maxResults) return
-            if (node.isEndOfWord) results.add(current)
+            if (node.isEndOfWord) results.add(current.toString())
             for (i in 0 until node.children.size()) {
                 val charCode = node.children.keyAt(i)
                 val child = node.children.valueAt(i)
-                collectWords(child, current + charCode.toChar(), results, maxResults)
+                current.append(charCode.toChar())
+                collectWords(child, current, results, maxResults)
+                current.deleteCharAt(current.length - 1)
             }
         }
 

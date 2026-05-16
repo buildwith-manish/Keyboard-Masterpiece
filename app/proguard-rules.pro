@@ -1,8 +1,11 @@
 # ─── JNI — must keep exact native method signatures ───
 -keep class com.keyboardmasterpiece.nativebridge.NativeGestureBridge {
     public static native java.lang.String nativeClassify(float[], int);
-    public static boolean available;
     public static java.lang.String classify(float[], int);
+}
+# FIX: FINAL-010 — Keep native methods via class member rule, not incorrect field rule
+-keepclasswithmembers class com.keyboardmasterpiece.nativebridge.NativeGestureBridge {
+    native <methods>;
 }
 -keepclasseswithmembernames class * { native <methods>; }
 
@@ -11,6 +14,9 @@
 
 # ─── Settings activity — referenced by manifest ───
 -keep class com.keyboardmasterpiece.settings.SettingsActivity
+
+# ─── Boot receiver — referenced by manifest ───
+-keep class com.keyboardmasterpiece.ime.BootReceiver
 
 # ─── Enums used in SharedPreferences (valueOf) ───
 -keepclassmembers enum com.keyboardmasterpiece.engine.Panel { *; }

@@ -3,15 +3,20 @@ package com.keyboardmasterpiece.engine
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 /**
  * FIX: BUG-003 — UserPreferences now uses a private constructor with factory methods.
  *   - createBootSafe() uses device-protected storage (safe before device unlock).
  *   - create() uses regular credential-encrypted storage.
  * FIX: QUALITY-003 — All one-liner properties expanded to multi-line with named constants.
+ * FIX: FINAL-002 — Personal words stored in EncryptedSharedPreferences.
+ *   User vocabulary data (which reveals what they type) is now encrypted at rest.
  */
 class UserPreferences private constructor(
-    private val sp: SharedPreferences
+    private val sp: SharedPreferences,
+    private val encryptedSp: SharedPreferences
 ) {
 
     companion object {
@@ -44,13 +49,36 @@ class UserPreferences private constructor(
         private const val DEFAULT_LAST_LAYOUT_PANEL = Panel.QWERTY.name
 
         /**
+         * FIX: FINAL-002 — Create encrypted SharedPreferences for sensitive data.
+         */
+        private fun createEncryptedPrefs(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                "keyboard_prefs_encrypted",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+
+        /**
          * FIX: BUG-003 — Create UserPreferences using device-protected storage.
          * Safe to use before the device is unlocked (Direct Boot aware).
          */
         fun createBootSafe(context: Context): UserPreferences {
             val protectedContext = context.createDeviceProtectedStorageContext()
             val sp = protectedContext.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-            return UserPreferences(sp)
+            // FIX: FINAL-002 — Encrypted prefs may not work in device-protected storage,
+            // so fall back to regular prefs for boot-safe mode
+            val encryptedSp = try {
+                createEncryptedPrefs(protectedContext)
+            } catch (_: Exception) {
+                sp // Fallback to same prefs if encryption fails in protected storage
+            }
+            return UserPreferences(sp, encryptedSp)
         }
 
         /**
@@ -59,7 +87,8 @@ class UserPreferences private constructor(
          */
         fun create(context: Context): UserPreferences {
             val sp = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-            return UserPreferences(sp)
+            val encryptedSp = createEncryptedPrefs(context)
+            return UserPreferences(sp, encryptedSp)
         }
     }
 
@@ -107,12 +136,13 @@ class UserPreferences private constructor(
         get() = sp.getString(KEY_LAST_LAYOUT_PANEL, DEFAULT_LAST_LAYOUT_PANEL) ?: DEFAULT_LAST_LAYOUT_PANEL
         set(value) = sp.edit().putString(KEY_LAST_LAYOUT_PANEL, value).apply()
 
+    /** FIX: FINAL-002 — Personal words stored in encrypted SharedPreferences */
     fun personalWords(): MutableSet<String> =
-        sp.getStringSet(KEY_PERSONAL_WORDS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        encryptedSp.getStringSet(KEY_PERSONAL_WORDS, emptySet())?.toMutableSet() ?: mutableSetOf()
 
-    /** FIX: MED-006 — Consistent personal word limit. */
+    /** FIX: MED-006 — Consistent personal word limit. FINAL-002 — Encrypted storage. */
     fun savePersonalWords(words: Set<String>) {
-        sp.edit().putStringSet(KEY_PERSONAL_WORDS, words.take(MAX_PERSONAL_WORDS).toSet()).apply()
+        encryptedSp.edit().putStringSet(KEY_PERSONAL_WORDS, words.take(MAX_PERSONAL_WORDS).toSet()).apply()
     }
 
     /** Detect landscape orientation from context configuration. */

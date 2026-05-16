@@ -227,10 +227,17 @@ static std::string decodeKeyPath(const std::vector<float>& pts, int count,
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_keyboardmasterpiece_nativebridge_NativeGestureBridge_nativeClassify(JNIEnv* env, jobject, jfloatArray arr, jint count) {
-    if (count < 2 || arr == nullptr) return env->NewStringUTF("");
+    // FIX: FINAL-005 — Null checks for env and arr parameters
+    if (env == nullptr || arr == nullptr || count < 2) return env ? env->NewStringUTF("") : nullptr;
     const int len = count * 2;
     std::vector<float> p(len);
     env->GetFloatArrayRegion(arr, 0, len, p.data());
+
+    // FIX: FINAL-005 — Check for JNI exceptions after GetFloatArrayRegion
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return env->NewStringUTF("");
+    }
 
     // Compute bounding box and path length
     float minX = p[0], maxX = p[0], minY = p[1], maxY = p[1], pathLen = 0.0f;
@@ -271,10 +278,8 @@ Java_com_keyboardmasterpiece_nativebridge_NativeGestureBridge_nativeClassify(JNI
     for (int i = 0; i < DICT_SIZE; i++) {
         const char* word = dict[i].word;
         int wlen = strlen(word);
-        // Check if key path starts and ends with the same letters as the word
         if (keyPath.length() >= 2 && wlen >= 2) {
             if (keyPath[0] == word[0] && keyPath[keyPath.length() - 1] == word[wlen - 1]) {
-                // Bonus: if key path matches first and last letter, it's a strong signal
                 int bonusDist = bestDist - 2;
                 if (bonusDist < bestDist) {
                     bestDist = bonusDist;
@@ -295,5 +300,11 @@ Java_com_keyboardmasterpiece_nativebridge_NativeGestureBridge_nativeClassify(JNI
         else bestWord = "hello";
     }
 
-    return env->NewStringUTF(bestWord.c_str());
+    // FIX: FINAL-005 — Check for exceptions before returning JNI string
+    jstring result = env->NewStringUTF(bestWord.c_str());
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return env->NewStringUTF("");
+    }
+    return result;
 }

@@ -3,25 +3,33 @@ package com.keyboardmasterpiece.engine
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.util.Base64
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 /**
  * FIX: HIGH-006 — TTL-based expiration (1 hour) for clipboard entries.
  * FIX: LOW-005 — Clipboard history expiration (covered by TTL).
  * FIX: BUG-002 — pasteText() now uses applicationContext instead of null for coerceToText().
- *
- * Security note: Ideally we would use EncryptedSharedPreferences from
- * androidx.security:security-crypto for encrypting clipboard data at rest.
- * Since that would require an additional dependency not currently in the
- * project's build.gradle, we use Base64 obfuscation as a minimum measure.
- * To upgrade to full encryption:
- *   1. Add implementation("androidx.security:security-crypto:1.1.0-alpha06")
- *   2. Replace sp with EncryptedSharedPreferences.create(...)
- *   3. Remove Base64 encode/decode below
+ * FIX: FINAL-001 — Replaced Base64 obfuscation with EncryptedSharedPreferences.
+ *   Clipboard data is now encrypted at rest using AES256_SIV (key) + AES256_GCM (value).
+ *   No more trivially-reversible Base64 encoding of sensitive user data.
  */
 class ClipboardStore(context: Context) {
     private val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    private val sp = context.getSharedPreferences("clipboard_store", Context.MODE_PRIVATE)
+
+    /** FIX: FINAL-001 — Use EncryptedSharedPreferences for clipboard data at rest */
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val sp: SharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        "clipboard_store_encrypted",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
 
     /** FIX: BUG-002 — Use applicationContext to avoid null context in coerceToText() */
     private val appContext = context.applicationContext
@@ -46,22 +54,20 @@ class ClipboardStore(context: Context) {
     fun pasteText(): String = clipboard.primaryClip?.getItemAt(0)?.coerceToText(appContext)?.toString().orEmpty()
 
     /**
-     * FIX: HIGH-006 — Store text with Base64 obfuscation and track timestamps.
+     * FIX: HIGH-006 — Store text with encryption and track timestamps.
      * FIX: LOW-005 — Entries older than TTL are pruned on access.
+     * FIX: FINAL-001 — No more Base64; EncryptedSharedPreferences handles encryption.
      */
     fun remember(text: String) {
         if (text.isBlank()) return
         pruneExpired()
 
         val all = mutableListOf<Pair<String, Long>>()
-        // Decode existing entries
         val existingItems = decodeItems()
         val existingTimestamps = decodeTimestamps()
 
-        // Add new entry first (most recent)
         all.add(Pair(text, System.currentTimeMillis()))
 
-        // Add existing non-duplicate entries
         for (i in existingItems.indices) {
             val existingText = existingItems[i]
             if (existingText != text && i < existingTimestamps.size) {
@@ -69,34 +75,23 @@ class ClipboardStore(context: Context) {
             }
         }
 
-        // Trim to max entries
         val trimmed = all.take(MAX_ENTRIES)
 
-        // Encode and save
         sp.edit()
-            .putString(KEY_ITEMS, trimmed.joinToString(SEPARATOR) { encode(it.first) })
+            .putString(KEY_ITEMS, trimmed.joinToString(SEPARATOR) { it.first })
             .putString(KEY_TIMESTAMPS, trimmed.joinToString(SEPARATOR) { it.second.toString() })
             .apply()
     }
 
-    /**
-     * FIX: HIGH-006 / LOW-005 — Return history with expired entries pruned.
-     */
     fun history(): List<String> {
         pruneExpired()
         return decodeItems()
     }
 
-    /**
-     * FIX: HIGH-006 — Remove all clipboard entries.
-     */
     fun clearAll() {
         sp.edit().clear().apply()
     }
 
-    /**
-     * FIX: HIGH-006 / LOW-005 — Prune entries older than TTL.
-     */
     private fun pruneExpired() {
         val items = decodeItems()
         val timestamps = decodeTimestamps()
@@ -116,41 +111,22 @@ class ClipboardStore(context: Context) {
             val validTimestamps = validIndices.map { timestamps[it] }
 
             sp.edit()
-                .putString(KEY_ITEMS, validItems.joinToString(SEPARATOR) { encode(it) })
+                .putString(KEY_ITEMS, validItems.joinToString(SEPARATOR) { it })
                 .putString(KEY_TIMESTAMPS, validTimestamps.joinToString(SEPARATOR) { it.toString() })
                 .apply()
         }
     }
 
-    /** FIX: HIGH-006 — Decode items from Base64 obfuscated storage. */
+    /** FIX: FINAL-001 — Read items directly from encrypted storage (no Base64 decode) */
     private fun decodeItems(): List<String> {
         val raw = sp.getString(KEY_ITEMS, "") ?: ""
         if (raw.isBlank()) return emptyList()
-        return raw.split(SEPARATOR).filter { it.isNotBlank() }.map { decode(it) }
+        return raw.split(SEPARATOR).filter { it.isNotBlank() }
     }
 
-    /** FIX: HIGH-006 — Decode timestamps from storage. */
     private fun decodeTimestamps(): List<Long> {
         val raw = sp.getString(KEY_TIMESTAMPS, "") ?: ""
         if (raw.isBlank()) return emptyList()
         return raw.split(SEPARATOR).filter { it.isNotBlank() }.mapNotNull { it.toLongOrNull() }
-    }
-
-    /** FIX: HIGH-006 — Base64 obfuscation for clipboard content. */
-    private fun encode(text: String): String {
-        return try {
-            Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        } catch (e: Exception) {
-            text // Fallback to plain text if encoding fails
-        }
-    }
-
-    /** FIX: HIGH-006 — Base64 de-obfuscation for clipboard content. */
-    private fun decode(encoded: String): String {
-        return try {
-            String(Base64.decode(encoded, Base64.NO_WRAP), Charsets.UTF_8)
-        } catch (e: Exception) {
-            encoded // Fallback: treat as plain text
-        }
     }
 }

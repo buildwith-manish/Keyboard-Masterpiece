@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.SparseArray
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import com.keyboardmasterpiece.engine.*
 import com.keyboardmasterpiece.nativebridge.NativeGestureBridge
 import kotlin.math.max
@@ -25,6 +26,8 @@ import kotlin.math.sqrt
  * FIX: LOW-006 — ThemeConfig data class for all color values
  * FIX: BUG-004 — Separate pre-allocated paints for key types instead of mutating shared keyPaint
  * FIX: BUG-011 — Reset state flags in onDetachedFromWindow before removing handler callbacks
+ * FIX: FINAL-007 — Dedicated pre-allocated previewPopupPaint (no mutation in drawPreview)
+ * FIX: FINAL-009 — Accessibility: announce key presses to TalkBack
  */
 class KeyboardView(context: Context) : View(context) {
     interface Listener {
@@ -83,6 +86,9 @@ class KeyboardView(context: Context) : View(context) {
     private val normalKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val actionKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val spaceKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // FIX: FINAL-007 — Dedicated pre-allocated paint for popup preview (no mutation in drawPreview)
+    private val previewPopupPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val path = Path()
     private val gesture = FloatArray(512)
@@ -239,6 +245,15 @@ class KeyboardView(context: Context) : View(context) {
         isHapticFeedbackEnabled = false
         setLayerType(LAYER_TYPE_HARDWARE, null)
         setBackgroundColor(Color.TRANSPARENT)
+        // FIX: FINAL-009 — Accessibility: announce key presses to TalkBack
+        accessibilityDelegate = object : AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.contentDescription = "Keyboard input area"
+                info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+            }
+        }
+        contentDescription = "Keyboard input area"
     }
 
     fun setKeys(keys: List<List<KeyboardKey>>, p: Panel, sh: Boolean, ca: Boolean, incog: Boolean) {
@@ -336,6 +351,7 @@ class KeyboardView(context: Context) : View(context) {
      * FIX: HIGH-001 — updatePaints reads from ThemeConfig, only called when themeDirty.
      * FIX: LOW-006 — All colors come from ThemeConfig, no hardcoded colors.
      * FIX: BUG-004 — Also update the separate key-type paints.
+     * FIX: FINAL-007 — Also update dedicated previewPopupPaint from theme.
      */
     private fun updatePaints() {
         val theme = currentTheme
@@ -351,6 +367,9 @@ class KeyboardView(context: Context) : View(context) {
         normalKeyPaint.color = theme.keyColor
         actionKeyPaint.color = theme.actionKeyColor
         spaceKeyPaint.color = theme.spaceKeyColor
+
+        // FIX: FINAL-007 — Update dedicated preview paint from theme
+        previewPopupPaint.color = theme.popupColor
     }
 
     /**
@@ -416,15 +435,12 @@ class KeyboardView(context: Context) : View(context) {
     /**
      * FIX: HIGH-001 — No paint allocation in drawPreview.
      * FIX: MED-001 — Use cached metrics.
+     * FIX: FINAL-007 — Use dedicated previewPopupPaint instead of mutating popupPaint.
      */
     private fun drawPreview(c: Canvas, key: KeyboardKey) {
         if (key.label.length > 3) return
         @Suppress("DEPRECATION")
         val r = key.rect
-
-        val theme = currentTheme
-        val savedPopupColor = popupPaint.color
-        popupPaint.color = theme.popupColor
 
         val pr = RectF(
             r.centerX() - metrics.previewWidth,
@@ -432,9 +448,9 @@ class KeyboardView(context: Context) : View(context) {
             r.centerX() + metrics.previewWidth,
             r.top - metrics.previewBottomPad
         )
-        c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, popupPaint)
+        // FIX: FINAL-007 — Use dedicated previewPopupPaint (no save/restore mutation)
+        c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, previewPopupPaint)
         c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, borderPaint)
-        popupPaint.color = savedPopupColor
 
         textPaint.textSize = metrics.textPreview
         val baseline = pr.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
@@ -535,6 +551,7 @@ class KeyboardView(context: Context) : View(context) {
      * FIX: HIGH-004 — Handle pointer up for multi-touch.
      * FIX: MED-002 — Use SUGGESTION_HEIGHT_DP consistently.
      * FIX: MED-003 — Clear pressed suggestion highlight on up.
+     * FIX: FINAL-009 — Announce key press for TalkBack accessibility.
      */
     private fun handleUp(e: MotionEvent, pointerIndex: Int) {
         val pointerId = e.getPointerId(pointerIndex)
@@ -560,6 +577,13 @@ class KeyboardView(context: Context) : View(context) {
                     listener?.onSuggestion(suggestions.getOrNull(idx).orEmpty())
                 }
                 finalKey != null -> listener?.onKey(finalKey)
+            }
+
+            // FIX: FINAL-009 — Announce key press for TalkBack accessibility
+            finalKey?.let { key ->
+                if (key.label.isNotBlank()) {
+                    announceForAccessibility(key.label)
+                }
             }
 
             previewKey = null
