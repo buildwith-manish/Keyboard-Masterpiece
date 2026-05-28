@@ -2,7 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground">
+    android:background="?android:attr/colorBackground"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -10,6 +11,7 @@
         android:orientation="vertical"
         android:padding="24dp">
 
+        <!-- Header -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -21,38 +23,94 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Offline Android IME. Enable it in system keyboard settings, then select it as your input method."
+            android:layout_marginTop="4dp"
+            android:text="The ultimate Android keyboard"
             android:textSize="16sp"
             android:textColor="?android:attr/textColorSecondary" />
+
+        <!-- Setup Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="SETUP"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/colorPrimary"
+            android:letterSpacing="0.1" />
 
         <Button
             android:id="@+id/btn_enable_ime"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Enable keyboard" />
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="Enable Keyboard" />
 
         <Button
             android:id="@+id/btn_set_default"
             android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="Set as Default Input Method" />
+
+        <!-- Theme Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="THEME"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/colorPrimary"
+            android:letterSpacing="0.1" />
+
+        <TextView
+            android:id="@+id/theme_name_label"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Set as default input method" />
+            android:text="Current: Classic Light"
+            android:textSize="16sp"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/theme_picker_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
 
         <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/darkTheme"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Dark theme"
+            android:layout_marginTop="8dp"
+            android:text="Quick dark/light toggle"
             android:contentDescription="Toggle dark theme"
             android:textColor="?android:attr/textColorPrimary" />
+
+        <!-- Typing Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="TYPING"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/colorPrimary"
+            android:letterSpacing="0.1" />
 
         <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/numberRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:text="Always show number row"
             android:contentDescription="Toggle number row"
             android:textColor="?android:attr/textColorPrimary" />
@@ -89,10 +147,21 @@
             android:contentDescription="Toggle RTL layout"
             android:textColor="?android:attr/textColorPrimary" />
 
+        <!-- Size Section -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="24dp"
+            android:text="SIZE"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/colorPrimary"
+            android:letterSpacing="0.1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:text="Font size"
             android:textColor="?android:attr/textColorPrimary" />
 
@@ -107,7 +176,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Key height"
+            android:text="Key height (or drag handle on keyboard)"
             android:textColor="?android:attr/textColorPrimary" />
 
         <SeekBar
@@ -118,12 +187,25 @@
             android:max="24"
             android:progress="8" />
 
+        <!-- Features Info -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="Built-in controls: symbols, emoji search, clipboard, arrows, undo/redo, copy/cut/paste, select all, one-handed, floating and split layout modes are available from keyboard toolbar keys."
+            android:layout_marginTop="24dp"
+            android:text="KEYBOARD FEATURES"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/colorPrimary"
+            android:letterSpacing="0.1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Toolbar: Clipboard, Settings, Theme, One-hand, Voice, Incognito\nEmoji: 9 categories with 320+ emojis\nClipboard: History with pin &amp; delete\nTyping: Autocorrect, trigram prediction, undo/redo\nKeys: Double-tap Shift for caps lock, double-tap Space for period\nFile sharing: Photo &amp; file picker with commitContent API\nLayout: Full, one-handed, floating, split modes"
             android:textSize="14sp"
+            android:lineSpacingExtra="4dp"
             android:textColor="?android:attr/textColorSecondary" />
+
     </LinearLayout>
 </ScrollView>

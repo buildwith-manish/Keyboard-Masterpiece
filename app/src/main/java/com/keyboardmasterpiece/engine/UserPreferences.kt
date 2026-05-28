@@ -35,6 +35,7 @@ class UserPreferences private constructor(
         private const val KEY_IS_RTL = "is_rtl"
         private const val KEY_LAST_LAYOUT_PANEL = "last_layout_panel"
         private const val KEY_PERSONAL_WORDS = "personal_words"
+        private const val KEY_THEME_INDEX = "theme_index"
 
         // Default values
         private const val DEFAULT_DARK_THEME = false
@@ -94,9 +95,18 @@ class UserPreferences private constructor(
 
     // FIX: QUALITY-003 — All properties expanded to multi-line with named constants
 
+    /** Feature 4: themeIndex — index into ThemePalette.THEMES. */
+    var themeIndex: Int
+        get() = sp.getInt(KEY_THEME_INDEX, 0)
+        set(value) = sp.edit().putInt(KEY_THEME_INDEX, value % ThemePalette.THEMES.size).apply()
+
+    /**
+     * Feature 4: darkTheme now derives from themeIndex for backward compatibility.
+     * 0 is Classic Light, everything else is "dark".
+     */
     var darkTheme: Boolean
-        get() = sp.getBoolean(KEY_DARK_THEME, DEFAULT_DARK_THEME)
-        set(value) = sp.edit().putBoolean(KEY_DARK_THEME, value).apply()
+        get() = themeIndex != 0
+        set(value) { if (value && themeIndex == 0) themeIndex = 1 else if (!value) themeIndex = 0 }
 
     var numberRow: Boolean
         get() = sp.getBoolean(KEY_NUMBER_ROW, DEFAULT_NUMBER_ROW)
