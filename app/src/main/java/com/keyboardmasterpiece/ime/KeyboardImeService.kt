@@ -71,6 +71,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     private var lastEditorAction = EditorInfo.IME_ACTION_NONE
     private var isPasswordField = false
     private var previousWord: String? = null
+    // Feature 6: Track second previous word for trigram context
+    private var previousWord2: String? = null
 
     // FIX: CRIT-002 — composingText changed from String to StringBuilder
     private val composingText = StringBuilder()
@@ -106,6 +108,11 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     // TASK1 — Handler for chunked paste
     private val chunkedPasteHandler = Handler(Looper.getMainLooper())
     private var isChunkedPasteInProgress = false
+
+    // FEATURE: Emoji category tracking
+    private var emojiCategory = EmojiCategory.SMILEYS
+    private val recentEmojis = mutableListOf<String>()
+    private val MAX_RECENT_EMOJIS = 20
 
     // TASK3 — File preview info data class
     data class FilePreviewInfo(
@@ -200,6 +207,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             currentPanel = detectInitialPanel(info) // FIX: INFO-004
             composingText.clear()
             isComposing = false
+            previousWord = null // Feature 6: Reset context on new field
+            previousWord2 = null
         }
 
         // FIX: INFO-004 — Detect input type and switch panel accordingly
@@ -317,7 +326,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         ic.beginBatchEdit()
         try {
             if (key.isAction) {
-                handleActionKey(key.code, ic)
+                handleActionKey(key, ic)
             } else {
                 commitPrintable(key.output, ic)
             }
@@ -360,6 +369,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 commitTextWithUndo(word, ic)
                 commitTextWithUndo(" ", ic)
                 suggestions.learn(word)
+                previousWord2 = previousWord // Feature 6: Track second previous word
                 previousWord = word
             } finally {
                 ic.endBatchEdit()
@@ -391,6 +401,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 ic.deleteSurroundingText(current.length, 0)
             }
             commitTextWithUndo(text + " ", ic)
+            previousWord2 = previousWord // Feature 6: Track second previous word
             previousWord = text
             suggestions.learn(text)
         } finally {
@@ -404,7 +415,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         sendFileViaInputConnection(uri, mimeType)
     }
 
-    private fun handleActionKey(code: Int, ic: InputConnection) {
+    private fun handleActionKey(key: KeyboardKey, ic: InputConnection) {
+        val code = key.code
         when (code) {
             KeyCodes.SHIFT -> handleShift()
             KeyCodes.BACKSPACE -> handleBackspace(ic)
@@ -423,7 +435,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             KeyCodes.SETTINGS -> launchSettings()
             KeyCodes.MODE -> cycleLayoutMode()
             KeyCodes.THEME -> {
-                prefs.darkTheme = !prefs.darkTheme
+                ThemePalette.cycle(prefs) // Feature 4: Cycle through all themes
                 refreshKeyboardLayout()
             }
             KeyCodes.INCOGNITO -> {
@@ -433,8 +445,15 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             }
             KeyCodes.UNDO -> performUndo(ic)
             KeyCodes.REDO -> performRedo(ic)
-            KeyCodes.COPY -> ic.performContextMenuAction(android.R.id.copy)
-            KeyCodes.CUT -> ic.performContextMenuAction(android.R.id.cut)
+            KeyCodes.COPY -> {
+                ic.performContextMenuAction(android.R.id.copy)
+                // Refresh clipboard panel if visible so new item appears
+                if (currentPanel == Panel.CLIPBOARD) refreshKeyboardLayout()
+            }
+            KeyCodes.CUT -> {
+                ic.performContextMenuAction(android.R.id.cut)
+                if (currentPanel == Panel.CLIPBOARD) refreshKeyboardLayout()
+            }
             KeyCodes.PASTE -> performPaste(ic)
             KeyCodes.SELECT_ALL -> ic.performContextMenuAction(android.R.id.selectAll)
             KeyCodes.LEFT -> sendKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
@@ -444,6 +463,73 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             // TASK3 — File picker key codes
             KeyCodes.PHOTO_PICKER -> launchPhotoPicker()
             KeyCodes.FILE_PICKER -> launchFilePicker()
+
+            // ═══════════════════════════════════════════════════════════════
+            // FEATURE: Emoji category key codes
+            // ═══════════════════════════════════════════════════════════════
+            KeyCodes.EMOJI_CATEGORY_SMILEYS -> { emojiCategory = EmojiCategory.SMILEYS; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_GESTURES -> { emojiCategory = EmojiCategory.GESTURES; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_ANIMALS -> { emojiCategory = EmojiCategory.ANIMALS; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_FOOD -> { emojiCategory = EmojiCategory.FOOD; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_ACTIVITIES -> { emojiCategory = EmojiCategory.ACTIVITIES; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_TRAVEL -> { emojiCategory = EmojiCategory.TRAVEL; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_OBJECTS -> { emojiCategory = EmojiCategory.OBJECTS; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_SYMBOLS -> { emojiCategory = EmojiCategory.SYMBOLS; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_RECENT -> { emojiCategory = EmojiCategory.RECENT; refreshKeyboardLayout() }
+
+            // ═══════════════════════════════════════════════════════════════
+            // FEATURE: Clipboard action key codes
+            // ═══════════════════════════════════════════════════════════════
+            KeyCodes.CLIP_ITEM -> {
+                // key.output contains the full clip text
+                val clipText = key.output
+                if (clipText.isNotEmpty()) {
+                    commitCurrentWord()
+                    if (clipText.length <= ClipboardStore.CHUNK_SIZE) {
+                        commitTextWithUndo(clipText, ic)
+                    } else {
+                        performChunkedPaste(clipText, ic)
+                    }
+                }
+                refreshKeyboardLayout()
+            }
+            KeyCodes.CLIP_PIN -> {
+                // key.output contains the clip index as string
+                val idx = key.output.toIntOrNull()
+                if (idx != null) {
+                    clip.togglePin(idx)
+                }
+                refreshKeyboardLayout()
+            }
+            KeyCodes.CLIP_DELETE -> {
+                // key.output contains the clip index as string
+                val idx = key.output.toIntOrNull()
+                if (idx != null) {
+                    clip.deleteAt(idx)
+                }
+                refreshKeyboardLayout()
+            }
+            KeyCodes.CLIP_CLEAR -> {
+                clip.clearAll()
+                refreshKeyboardLayout()
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // FEATURE: Toolbar key codes
+            // ═══════════════════════════════════════════════════════════════
+            KeyCodes.TOOLBAR_CLIPBOARD -> { currentPanel = Panel.CLIPBOARD; refreshKeyboardLayout() }
+            KeyCodes.TOOLBAR_SETTINGS -> launchSettings()
+            KeyCodes.TOOLBAR_THEME -> {
+                ThemePalette.cycle(prefs) // Feature 4: Cycle through all themes
+                refreshKeyboardLayout()
+            }
+            KeyCodes.TOOLBAR_ONEHAND -> cycleLayoutMode()
+            KeyCodes.TOOLBAR_VOICE -> showInputMethodPicker()
+            KeyCodes.TOOLBAR_INCOGNITO -> {
+                prefs.incognito = !prefs.incognito
+                refreshKeyboardLayout()
+                updateSuggestions()
+            }
         }
     }
 
@@ -612,6 +698,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         isComposing = false
         // Learn the committed word
         if (!isPasswordField && !prefs.incognito && word.length > 2) {
+            previousWord2 = previousWord // Feature 6: Track second previous word
             previousWord = word
             suggestions.learn(word)
         }
@@ -627,12 +714,23 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
      */
     private fun commitPrintable(output: String, ic: InputConnection) {
         if (output.isEmpty()) return
+
+        // FEATURE: Emoji panel — commit emojis directly without composing, track recent
+        if (currentPanel == Panel.EMOJI) {
+            commitCurrentWord()
+            ic.commitText(output, 1)
+            addRecentEmoji(output)
+            refreshKeyboardLayout()
+            updateSuggestions()
+            return
+        }
+
         val shouldUpper = (isShifted || isCapsLocked) && output.length == 1 && output[0].isLetter()
         val textToType = if (shouldUpper) output.uppercase() else output
 
         // FIX: BUG-009 — Check word boundary BEFORE appending to composingText
         // TASK2 — Symbol keys: punctuation and special characters commit directly
-        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:;@#\$%&*()-_=+[]{}|\\/<>'\"~^`"
+        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:;@#\$%&*()-_=+[]{}|\\/<>'\"~^`" }
 
         if (isWordBoundary) {
             // Commit current composing word first, then commit the punctuation directly
@@ -640,6 +738,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             ic.commitText(textToType, 1)
             val before = getTextBeforeCursor(ic, 64).trim().split(Regex("\\s+")).lastOrNull() ?: ""
             if (before.length > 2) {
+                previousWord2 = null // Feature 6: Reset second context on word boundary
                 previousWord = before
                 if (!isPasswordField && !prefs.incognito) suggestions.learn(before)
             }
@@ -684,6 +783,23 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         val wordLength = before.takeLastWhile { !it.isWhitespace() && it != '\n' }.length.coerceAtLeast(1)
         ic.deleteSurroundingText(wordLength, 0)
         updateSuggestions()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FEATURE: Emoji recent tracking
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Add an emoji to the recent list. Most recent is first.
+     * Duplicates are moved to the front. Max 20 items.
+     */
+    private fun addRecentEmoji(emoji: String) {
+        if (emoji.isBlank()) return
+        recentEmojis.remove(emoji)
+        recentEmojis.add(0, emoji)
+        while (recentEmojis.size > MAX_RECENT_EMOJIS) {
+            recentEmojis.removeAt(recentEmojis.lastIndex)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1023,7 +1139,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
         val view = currentKeyboardView ?: return
         val word = if (isComposing) composingText.toString() else currentWord(currentInputConnection ?: return)
-        suggestions.suggestAsync(word, previousWord) { list ->
+        suggestions.suggestAsync(word, previousWord, previousWord2) { list ->
             view.post {
                 view.setSuggestions(list)
             }
@@ -1040,7 +1156,11 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 isCapsLocked,
                 prefs.numberRow,
                 prefs.isRtl,
-                prefs.isLandscape(this@KeyboardImeService) // FIX: LOW-004
+                prefs.isLandscape(this@KeyboardImeService), // FIX: LOW-004
+                emojiCategory = emojiCategory,
+                recentEmojis = recentEmojis.toList(),
+                clipHistory = clip.history(),
+                pinnedIndices = clip.pinnedIndices()
             )
             setKeys(keys, currentPanel, isShifted, isCapsLocked, prefs.incognito)
         }

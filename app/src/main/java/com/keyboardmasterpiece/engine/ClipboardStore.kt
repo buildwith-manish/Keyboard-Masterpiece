@@ -50,6 +50,7 @@ class ClipboardStore(context: Context) {
         private const val TTL_MS = 60L * 60L * 1000L // 1 hour
         private const val KEY_ITEMS = "items"
         private const val KEY_TIMESTAMPS = "timestamps"
+        private const val KEY_PINNED = "pinned_indices"
         private const val SEPARATOR = "\u001E"
         private const val MAX_ENTRIES = 20
 
@@ -272,6 +273,76 @@ class ClipboardStore(context: Context) {
     fun history(): List<String> {
         pruneExpired()
         return decodeItems()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Pin support for clipboard entries
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** Pin a clipboard entry by index */
+    fun pin(index: Int) {
+        val current = decodePinnedIndices().toMutableSet()
+        current.add(index)
+        encodePinnedIndices(current)
+    }
+
+    /** Unpin a clipboard entry by index */
+    fun unpin(index: Int) {
+        val current = decodePinnedIndices().toMutableSet()
+        current.remove(index)
+        encodePinnedIndices(current)
+    }
+
+    /** Check if a clipboard entry is pinned */
+    fun isPinned(index: Int): Boolean {
+        return index in decodePinnedIndices()
+    }
+
+    /** Get all pinned indices */
+    fun pinnedIndices(): Set<Int> {
+        return decodePinnedIndices()
+    }
+
+    /** Toggle pin state for a clipboard entry */
+    fun togglePin(index: Int) {
+        if (isPinned(index)) unpin(index) else pin(index)
+    }
+
+    /** Delete a clipboard entry by index */
+    fun deleteAt(index: Int) {
+        val items = decodeItems().toMutableList()
+        val timestamps = decodeTimestamps().toMutableList()
+        if (index < 0 || index >= items.size) return
+
+        items.removeAt(index)
+        if (index < timestamps.size) timestamps.removeAt(index)
+
+        // Update pinned indices — shift indices down for items after deleted one
+        val pinned = decodePinnedIndices().toMutableSet()
+        val newPinned = mutableSetOf<Int>()
+        for (p in pinned) {
+            when {
+                p < index -> newPinned.add(p)
+                p > index -> newPinned.add(p - 1)
+                // p == index: the pinned item was deleted, don't carry over
+            }
+        }
+
+        sp.edit()
+            .putString(KEY_ITEMS, items.joinToString(SEPARATOR) { it })
+            .putString(KEY_TIMESTAMPS, timestamps.joinToString(SEPARATOR) { it.toString() })
+            .apply()
+        encodePinnedIndices(newPinned)
+    }
+
+    private fun decodePinnedIndices(): Set<Int> {
+        val raw = sp.getString(KEY_PINNED, "") ?: ""
+        if (raw.isBlank()) return emptySet()
+        return raw.split(",").filter { it.isNotBlank() }.mapNotNull { it.trim().toIntOrNull() }.toSet()
+    }
+
+    private fun encodePinnedIndices(indices: Set<Int>) {
+        sp.edit().putString(KEY_PINNED, indices.joinToString(",") { it.toString() }).apply()
     }
 
     fun clearAll() {

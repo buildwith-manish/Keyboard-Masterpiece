@@ -118,9 +118,27 @@ class KeyboardView(context: Context) : View(context) {
     // FIX: MED-003 — Pressed suggestion index for visual feedback
     private var pressedSuggestionIndex = -1
 
+    // Feature 5: Drag handle for keyboard resize
+    private var dragHandleRect = RectF()
+    private var isDraggingHandle = false
+    private var dragStartY = 0f
+    private var dragStartDelta = 0
+    private val dragHandlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    companion object {
+        private const val SUGGESTION_HEIGHT_DP = 38
+        private const val BACKSPACE_REPEAT_INTERVAL_MS = 50L // FIX: MED-004 — was 45ms, now 50ms
+        // Feature 5: Drag handle constraints
+        private const val DRAG_HANDLE_WIDTH_DP = 80
+        private const val DRAG_HANDLE_HEIGHT_DP = 8
+        private const val MIN_KEY_HEIGHT_DELTA = -8
+        private const val MAX_KEY_HEIGHT_DELTA = 40
+        private const val DRAG_SENSITIVITY = 1.5f // pixels to delta scaling
+    }
+
     // FIX: HIGH-001 — themeDirty flag; only update paint colors when theme changes
     private var themeDirty = true
-    private var lastDarkTheme = false
+    private var lastThemeIndex = -1 // Feature 4: Track theme index instead of boolean
 
     // FIX: LOW-006 — ThemeConfig data class with all color values
     data class ThemeConfig(
@@ -136,7 +154,23 @@ class KeyboardView(context: Context) : View(context) {
         val suggestionHighlightColor: Int
     )
 
-    private val lightTheme = ThemeConfig(
+    /** Feature 4: Apply a ThemePalette.Theme to the internal ThemeConfig. */
+    fun applyTheme(theme: ThemePalette.Theme) {
+        currentTheme = ThemeConfig(
+            bgColor = theme.bgColor,
+            keyColor = theme.keyColor,
+            actionKeyColor = theme.actionKeyColor,
+            spaceKeyColor = theme.spaceKeyColor,
+            borderColor = theme.borderColor,
+            textColor = theme.textColor,
+            accentColor = theme.accentColor,
+            pathColor = theme.pathColor,
+            popupColor = theme.popupColor,
+            suggestionHighlightColor = theme.suggestionHighlightColor
+        )
+    }
+
+    private var currentTheme: ThemeConfig = ThemeConfig(
         bgColor = Color.rgb(238, 241, 246),
         keyColor = Color.WHITE,
         actionKeyColor = Color.rgb(218, 224, 235),
@@ -148,33 +182,12 @@ class KeyboardView(context: Context) : View(context) {
         popupColor = Color.WHITE,
         suggestionHighlightColor = Color.argb(40, 79, 124, 255)
     )
-
-    private val darkThemeConfig = ThemeConfig(
-        bgColor = Color.rgb(21, 23, 28),
-        keyColor = Color.rgb(42, 45, 52),
-        actionKeyColor = Color.rgb(55, 59, 68),
-        spaceKeyColor = Color.rgb(48, 52, 60),
-        borderColor = Color.rgb(68, 72, 82),
-        textColor = Color.WHITE,
-        accentColor = Color.rgb(79, 124, 255),
-        pathColor = Color.argb(160, 79, 124, 255),
-        popupColor = Color.rgb(32, 34, 40),
-        suggestionHighlightColor = Color.argb(50, 79, 124, 255)
-    )
-
-    private var currentTheme: ThemeConfig = lightTheme
         set(value) {
             if (field != value) {
                 field = value
                 themeDirty = true
             }
         }
-
-    // FIX: MED-002 — Single constant for suggestion area height
-    companion object {
-        private const val SUGGESTION_HEIGHT_DP = 38
-        private const val BACKSPACE_REPEAT_INTERVAL_MS = 50L // FIX: MED-004 — was 45ms, now 50ms
-    }
 
     // FIX: MED-001 — MetricsCache: cache all dp values in onSizeChanged
     private inner class MetricsCache {
@@ -293,20 +306,24 @@ class KeyboardView(context: Context) : View(context) {
     override fun onDraw(c: Canvas) {
         if (needsLayout) performLayout()
 
-        // FIX: HIGH-001 — Only update paint colors when theme changes (themeDirty flag)
-        val dark = preferences?.darkTheme == true
-        if (dark != lastDarkTheme) {
-            lastDarkTheme = dark
+        // Feature 4: Use ThemePalette instead of light/dark boolean
+        val idx = preferences?.themeIndex ?: 0
+        if (idx != lastThemeIndex) {
+            lastThemeIndex = idx
             themeDirty = true
         }
         if (themeDirty) {
-            currentTheme = if (dark) darkThemeConfig else lightTheme
+            val prefs = preferences
+            if (prefs != null) {
+                applyTheme(ThemePalette.current(prefs))
+            }
             updatePaints()
             themeDirty = false
         }
 
         c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
         drawSuggestions(c)
+        drawDragHandle(c) // Feature 5: Draw drag handle
         for (row in rows) for (key in row) drawKey(c, key)
         if (!path.isEmpty) c.drawPath(path, pathPaint)
         previewKey?.let { drawPreview(c, it) }
@@ -329,6 +346,11 @@ class KeyboardView(context: Context) : View(context) {
         }
 
         val totalGap = gap * (rows.firstOrNull()?.size?.plus(1) ?: 2)
+
+        // Feature 5: Position the drag handle at the top of the keyboard area
+        val handleW = dpF(DRAG_HANDLE_WIDTH_DP)
+        val handleH = dpF(DRAG_HANDLE_HEIGHT_DP)
+        dragHandleRect = RectF(width / 2f - handleW / 2f, top, width / 2f + handleW / 2f, top + handleH)
 
         rows.forEachIndexed { ri, row ->
             val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
@@ -491,6 +513,16 @@ class KeyboardView(context: Context) : View(context) {
         val x = e.getX(pointerIndex)
         val y = e.getY(pointerIndex)
 
+        // Feature 5: Check if touch is on the drag handle
+        if (dragHandleRect.contains(x, y)) {
+            isDraggingHandle = true
+            dragStartY = y
+            dragStartDelta = preferences?.keyHeightDelta ?: 8
+            handler.removeCallbacks(longPress)
+            postInvalidateOnAnimation()
+            return
+        }
+
         val state = PointerState(
             downKey = hitTest(x, y),
             downTime = System.currentTimeMillis(),
@@ -527,6 +559,21 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun handleMove(e: MotionEvent) {
+        // Feature 5: Handle drag handle resize
+        if (isDraggingHandle) {
+            val i = e.findPointerIndex(0)
+            if (i < 0) return
+            val y = e.getY(i)
+            val dy = dragStartY - y // Dragging up = positive delta (bigger keyboard)
+            val newDelta = (dragStartDelta + (dy / DRAG_SENSITIVITY).toInt())
+                .coerceIn(MIN_KEY_HEIGHT_DELTA, MAX_KEY_HEIGHT_DELTA)
+            preferences?.keyHeightDelta = newDelta
+            needsLayout = true
+            requestLayout()
+            postInvalidateOnAnimation()
+            return
+        }
+
         val state = pointerStates.get(primaryPointerId) ?: return
         val i = e.findPointerIndex(primaryPointerId)
         if (i < 0) return
@@ -556,6 +603,14 @@ class KeyboardView(context: Context) : View(context) {
      * FIX: FINAL-009 — Announce key press for TalkBack accessibility.
      */
     private fun handleUp(e: MotionEvent, pointerIndex: Int) {
+        // Feature 5: End drag handle resize
+        if (isDraggingHandle) {
+            isDraggingHandle = false
+            // Delta is already saved to preferences on each move, just clean up
+            postInvalidateOnAnimation()
+            return
+        }
+
         val pointerId = e.getPointerId(pointerIndex)
         val state = pointerStates.get(pointerId) ?: return
         val x = e.getX(pointerIndex)
@@ -614,6 +669,7 @@ class KeyboardView(context: Context) : View(context) {
         handler.removeCallbacks(longPress)
         repeatBackspace = false
         handler.removeCallbacks(repeatRunnable)
+        isDraggingHandle = false // Feature 5
         pointerStates.clear()
         primaryPointerId = -1
         previewKey = null
@@ -684,6 +740,7 @@ class KeyboardView(context: Context) : View(context) {
         repeatBackspace = false
         primaryPointerId = -1
         pressedSuggestionIndex = -1
+        isDraggingHandle = false // Feature 5
 
         handler.removeCallbacksAndMessages(null)
         path.reset()
@@ -698,5 +755,17 @@ class KeyboardView(context: Context) : View(context) {
      */
     fun onLowMemory() {
         suggestions = emptyList()
+    }
+
+    /**
+     * Feature 5: Draw the drag handle bar at the top of the keyboard.
+     * Draws a small centered rounded rectangle that users can drag to resize the keyboard.
+     */
+    private fun drawDragHandle(c: Canvas) {
+        val theme = currentTheme
+        dragHandlePaint.color = theme.borderColor
+        dragHandlePaint.alpha = if (isDraggingHandle) 200 else 120
+        val rad = dpF(4)
+        c.drawRoundRect(dragHandleRect, rad, rad, dragHandlePaint)
     }
 }

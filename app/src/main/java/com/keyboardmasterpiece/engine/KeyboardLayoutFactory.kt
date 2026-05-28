@@ -3,23 +3,119 @@ package com.keyboardmasterpiece.engine
 /**
  * FIX: MED-005 — RTL layout support via isRtl parameter.
  * FIX: LOW-004 — Landscape-specific keyboard layouts via isLandscape parameter.
+ * FEATURE: Emoji panel with categories, search & recent.
+ * FEATURE: Clipboard history panel with pin & delete.
+ * FEATURE: Toolbar row with quick actions (Gboard-style).
  */
 object KeyboardLayoutFactory {
     private fun k(label: String, output: String = label, weight: Float = 1f, alt: String = "") = KeyboardKey(label, output, 0, weight, alt)
     private fun a(label: String, code: Int, weight: Float = 1f) = KeyboardKey(label, code = code, weight = weight)
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Emoji data arrays — at least 40 emojis per category
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private val emojiSmileys = listOf(
+        "😀","😁","😂","🤣","😊","😍","😘","😎","🥳","😭",
+        "😃","😄","😅","😆","😉","😋","😌","🤔","😐","😑",
+        "😶","😏","😒","🙄","😬","😮","😯","😴"," sick","🤢",
+        "🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","😇","🤓"
+    )
+
+    private val emojiGestures = listOf(
+        "👍","👎","👊","✊","🤛","🤜","👏","🙌","👐","🤲",
+        "🤝","🙏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆",
+        "👇","☝️","✋","🤚","🖐","🖖","👋","🤏","💪","🦾",
+        "🦿","🦵","🦶","👂","🦻","👃","🧠","🫀","🫁","🦷"
+    )
+
+    private val emojiAnimals = listOf(
+        "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯",
+        "🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🐤","🦆",
+        "🦅","🦉","🦇","🐺","🐗","🐴","🦄","🐝","🪱","🐛",
+        "🦋","🐌","🐞","🐜","🪰","🪲","🪳","🦟","🦗","🕷"
+    )
+
+    private val emojiFood = listOf(
+        "🍕","🍔","🍟","🌭","🍿","🧂","🥓","🥚","🍳","🧇",
+        "🥞","🧈","🍞","🥐","🥨","🥯","🥖","🫓","🧀","🥗",
+        "🥙","🫔","🌮","🌯","🥪","🍝","🍜","🍲","🍛","🍣",
+        "🍺","🍻","🥂","🍷","🥃","🍸","🍹","🧋","☕","🍵"
+    )
+
+    private val emojiActivities = listOf(
+        "⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🥏","🎱",
+        "🪀","🏓","🏸","🏒","🏑","🥍","🏏","🪃","🥅","⛳",
+        "🏹","🎣","🤿","🥊","🥋","🎽","🛹","🛼","🛷","⛸",
+        "🎵","🎶","🎤","🎧","🎷","🪗","🎸","🎹","🎺","🎻"
+    )
+
+    private val emojiTravel = listOf(
+        "🚗","🚕","🚙","🚌","🚎","🏎","🚓","🚑","🚒","🚐",
+        "🛻","🚚","🚛","🚜","🦯","🦽","🦼","🛴","🚲","🛵",
+        "🏍","🛺","🚨","🚔","🚍","🚘","🚖","🚡","🚠","🚟",
+        "✈️","🛫","🛬","🪂","🚁","🛩","🛰","🚀","🛸","🏠"
+    )
+
+    private val emojiObjects = listOf(
+        "💡","🔦","🕯","💻","🖥","🖨","⌨️","🖱","🖲","💾",
+        "💿","📀","📷","📸","📹","🎥","📽","🎞","📞","☎️",
+        "📟","📠","📺","📻","🎙","🎚","🎛","🧭","⏱","⏲",
+        "⏰","🕰","⌛","⏳","📡","🔋","🪫","🔌","💰","💳"
+    )
+
+    private val emojiSymbols = listOf(
+        "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔",
+        "❣️","💕","💞","💓","💗","💖","💘","💝","💟","☮️",
+        "✝️","☪️","🕉","☸️","✡️","🔯","🕎","☯️","☦️","🛐",
+        "♈","♉","♊","♋","♌","♍","♎","♏","♐","♑"
+    )
+
     /**
      * FIX: MED-005 — Added isRtl parameter. When true, reverses key order in each row for QWERTY.
      * FIX: LOW-004 — Added isLandscape parameter. In landscape, wider key weights and optional number row.
+     * FEATURE: Added emojiCategory, recentEmojis, clipHistory, pinnedIndices for dynamic panels.
      */
-    fun layout(panel: Panel, shifted: Boolean, caps: Boolean, numberRow: Boolean, isRtl: Boolean = false, isLandscape: Boolean = false): List<List<KeyboardKey>> = when (panel) {
-        Panel.QWERTY -> qwerty(shifted || caps, numberRow || isLandscape, isRtl, isLandscape) // FIX: LOW-004 — Always show number row in landscape
-        Panel.SYMBOLS -> symbols(isRtl)
-        Panel.EMOJI -> emoji(isRtl)
-        Panel.CLIPBOARD -> clipboardShell(isRtl)
-        Panel.NUMPAD -> numpad(isRtl)
-        Panel.EDIT -> edit(isRtl)
+    fun layout(
+        panel: Panel,
+        shifted: Boolean,
+        caps: Boolean,
+        numberRow: Boolean,
+        isRtl: Boolean = false,
+        isLandscape: Boolean = false,
+        emojiCategory: EmojiCategory = EmojiCategory.SMILEYS,
+        recentEmojis: List<String> = emptyList(),
+        clipHistory: List<String> = emptyList(),
+        pinnedIndices: Set<Int> = emptySet()
+    ): List<List<KeyboardKey>> {
+        val baseLayout = when (panel) {
+            Panel.QWERTY -> qwerty(shifted || caps, numberRow || isLandscape, isRtl, isLandscape)
+            Panel.SYMBOLS -> symbols(isRtl)
+            Panel.EMOJI -> emoji(emojiCategory, recentEmojis, isRtl)
+            Panel.CLIPBOARD -> clipboardShell(clipHistory, pinnedIndices, isRtl)
+            Panel.NUMPAD -> numpad(isRtl)
+            Panel.EDIT -> edit(isRtl)
+        }
+        // FEATURE: Toolbar row — prepend to all panels except NUMPAD
+        return if (panel != Panel.NUMPAD) {
+            listOf(toolbar()) + baseLayout
+        } else {
+            baseLayout
+        }
     }
+
+    /**
+     * FEATURE: Toolbar strip — Gboard-style quick action buttons.
+     * Single row of compact buttons that appears above the keyboard on all panels except NUMPAD.
+     */
+    private fun toolbar(): List<KeyboardKey> = listOf(
+        a("📋", KeyCodes.TOOLBAR_CLIPBOARD, .8f),
+        a("⚙️", KeyCodes.TOOLBAR_SETTINGS, .8f),
+        a("🎨", KeyCodes.TOOLBAR_THEME, .8f),
+        a("🤚", KeyCodes.TOOLBAR_ONEHAND, .8f),
+        a("🎙", KeyCodes.TOOLBAR_VOICE, .8f),
+        a("🥷", KeyCodes.TOOLBAR_INCOGNITO, .8f)
+    )
 
     /**
      * FIX: MED-005 — RTL: reverse key order in each row, swap Shift/Backspace sides.
@@ -89,25 +185,120 @@ object KeyboardLayoutFactory {
         return if (isRtl) rows.map { it.reversed() } else rows
     }
 
-    /** FIX: MED-005 — RTL support for emoji panel. */
-    private fun emoji(isRtl: Boolean = false): List<List<KeyboardKey>> {
-        val rows = listOf(
-            listOf("😀","😁","😂","🤣","😊","😍","😘","😎","🥳","😭").map { k(it) },
-            listOf("👍","🙏","👏","🔥","❤️","💯","✨","🎉","✅","⭐").map { k(it) },
-            listOf("🍕","☕","⚽","🚗","✈️","🏠","💼","📌","🎵","🎁").map { k(it) },
-            listOf(a("ABC", KeyCodes.ABC, 1.3f), a("GIF", KeyCodes.EMOJI, 1f), k("🔍", ""), a("⌫", KeyCodes.BACKSPACE, 1.3f)),
-            listOf(a("📋", KeyCodes.CLIPBOARD, 1f), a("space", KeyCodes.SPACE, 4f), a("⏎", KeyCodes.ENTER, 1.3f))
+    /**
+     * FEATURE: Emoji panel with categories, search & recent.
+     * Row 0: Category tabs (horizontal scrollable)
+     * Rows 1-5: Emoji grid (8 per row = 40 per page)
+     * Row 6: ABC + Backspace
+     */
+    private fun emoji(category: EmojiCategory, recentEmojis: List<String>, isRtl: Boolean = false): List<List<KeyboardKey>> {
+        // Category tab row
+        val categoryRow = listOf(
+            a("😀", KeyCodes.EMOJI_CATEGORY_SMILEYS, 1f),
+            a("👋", KeyCodes.EMOJI_CATEGORY_GESTURES, 1f),
+            a("🐻", KeyCodes.EMOJI_CATEGORY_ANIMALS, 1f),
+            a("🍕", KeyCodes.EMOJI_CATEGORY_FOOD, 1f),
+            a("⚽", KeyCodes.EMOJI_CATEGORY_ACTIVITIES, 1f),
+            a("🚗", KeyCodes.EMOJI_CATEGORY_TRAVEL, 1f),
+            a("💡", KeyCodes.EMOJI_CATEGORY_OBJECTS, 1f),
+            a("🏳️‍🌈", KeyCodes.EMOJI_CATEGORY_SYMBOLS, 1f),
+            a("🕐", KeyCodes.EMOJI_CATEGORY_RECENT, 1f)
         )
+
+        // Select emoji list based on category
+        val emojis = when (category) {
+            EmojiCategory.SMILEYS -> emojiSmileys
+            EmojiCategory.GESTURES -> emojiGestures
+            EmojiCategory.ANIMALS -> emojiAnimals
+            EmojiCategory.FOOD -> emojiFood
+            EmojiCategory.ACTIVITIES -> emojiActivities
+            EmojiCategory.TRAVEL -> emojiTravel
+            EmojiCategory.OBJECTS -> emojiObjects
+            EmojiCategory.SYMBOLS -> emojiSymbols
+            EmojiCategory.RECENT -> if (recentEmojis.isNotEmpty()) recentEmojis else listOf("—")
+        }
+
+        // Build emoji grid rows (8 per row)
+        val gridRows = mutableListOf<List<KeyboardKey>>()
+        val chunked = emojis.chunked(8)
+        // Show up to 5 rows of emoji grid
+        for (i in 0 until 5.coerceAtMost(chunked.size)) {
+            gridRows.add(chunked[i].map { k(it) })
+        }
+        // Pad with empty rows if fewer than 5 rows
+        while (gridRows.size < 5) {
+            gridRows.add(emptyList())
+        }
+
+        // Bottom row: ABC + Backspace
+        val bottomRow = listOf(
+            a("ABC", KeyCodes.ABC, 1.3f),
+            a("📋", KeyCodes.CLIPBOARD, 1f),
+            a("space", KeyCodes.SPACE, 4f),
+            a("⌫", KeyCodes.BACKSPACE, 1.3f)
+        )
+
+        val rows = mutableListOf<List<KeyboardKey>>()
+        rows.add(categoryRow)
+        rows.addAll(gridRows)
+        rows.add(bottomRow)
+
         return if (isRtl) rows.map { it.reversed() } else rows
     }
 
-    /** FIX: MED-005 — RTL support for clipboard panel. */
-    private fun clipboardShell(isRtl: Boolean = false): List<List<KeyboardKey>> {
-        val rows = listOf(
-            listOf(a("ABC", KeyCodes.ABC), a("Paste", KeyCodes.PASTE), a("Copy", KeyCodes.COPY), a("Cut", KeyCodes.CUT), a("All", KeyCodes.SELECT_ALL)),
-            listOf(a("Undo", KeyCodes.UNDO), a("Redo", KeyCodes.REDO), a("←", KeyCodes.LEFT), a("→", KeyCodes.RIGHT)),
-            listOf(a("⌫", KeyCodes.BACKSPACE), a("space", KeyCodes.SPACE, 3f), a("⏎", KeyCodes.ENTER))
-        )
+    /**
+     * FEATURE: Clipboard history panel with pin & delete.
+     * Row 0: Clear All + Edit buttons
+     * Rows 1-N: Clipboard items (preview text as label, full text as output, CLIP_ITEM code)
+     *   Each item row also has PIN and DELETE buttons with the clip index in the output field
+     * Last row: ABC + Space + Enter
+     */
+    private fun clipboardShell(clipHistory: List<String>, pinnedIndices: Set<Int>, isRtl: Boolean = false): List<List<KeyboardKey>> {
+        val rows = mutableListOf<List<KeyboardKey>>()
+
+        // Top row: Clear All + Edit actions
+        rows.add(listOf(
+            a("Clear All", KeyCodes.CLIP_CLEAR, 1.5f),
+            a("Paste", KeyCodes.PASTE, 1.2f),
+            a("Copy", KeyCodes.COPY, 1f),
+            a("Cut", KeyCodes.CUT, 1f),
+            a("All", KeyCodes.SELECT_ALL, 1f)
+        ))
+
+        // Clipboard history items — pinned first, then regular
+        val pinnedItems = clipHistory.filterIndexed { index, _ -> index in pinnedIndices }
+        val regularItems = clipHistory.filterIndexed { index, _ -> index !in pinnedIndices }
+        val orderedItems = pinnedItems + regularItems
+
+        // Show up to 6 clipboard items (each with preview + pin + delete)
+        val displayItems = orderedItems.take(6)
+        for (item in displayItems) {
+            val originalIndex = clipHistory.indexOf(item)
+            val isPinned = originalIndex in pinnedIndices
+            val preview = item.take(15).replace("\n", " ")
+            val pinLabel = if (isPinned) "📌" else "📍"
+            rows.add(listOf(
+                // Clip item: label is preview, output is full text for pasting
+                KeyboardKey(preview, item, KeyCodes.CLIP_ITEM, 3f),
+                // Pin toggle: output stores the original index as string
+                KeyboardKey(pinLabel, originalIndex.toString(), KeyCodes.CLIP_PIN, .8f),
+                // Delete: output stores the original index as string
+                KeyboardKey("🗑", originalIndex.toString(), KeyCodes.CLIP_DELETE, .8f)
+            ))
+        }
+
+        // If no clipboard items, show a placeholder
+        if (displayItems.isEmpty()) {
+            rows.add(listOf(k("No clipboard items", "", 4f)))
+        }
+
+        // Bottom row: ABC + Space + Enter
+        rows.add(listOf(
+            a("ABC", KeyCodes.ABC, 1.3f),
+            a("space", KeyCodes.SPACE, 4f),
+            a("⏎", KeyCodes.ENTER, 1.3f)
+        ))
+
         return if (isRtl) rows.map { it.reversed() } else rows
     }
 

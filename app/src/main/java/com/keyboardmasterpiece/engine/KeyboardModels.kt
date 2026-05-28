@@ -62,4 +62,34 @@ object KeyCodes {
     const val PHOTO_PICKER = -52
     /** TASK3 — File picker button (PDF, docs, etc.) in keyboard toolbar */
     const val FILE_PICKER = -53
+
+    // Emoji category key codes
+    const val EMOJI_CATEGORY_SMILEYS = -60
+    const val EMOJI_CATEGORY_GESTURES = -61
+    const val EMOJI_CATEGORY_ANIMALS = -62
+    const val EMOJI_CATEGORY_FOOD = -63
+    const val EMOJI_CATEGORY_ACTIVITIES = -64
+    const val EMOJI_CATEGORY_TRAVEL = -65
+    const val EMOJI_CATEGORY_OBJECTS = -66
+    const val EMOJI_CATEGORY_SYMBOLS = -67
+    const val EMOJI_CATEGORY_RECENT = -68
+
+    // Clipboard action key codes
+    const val CLIP_ITEM = -70
+    const val CLIP_PIN = -71
+    const val CLIP_DELETE = -72
+    const val CLIP_CLEAR = -73
+
+    // Toolbar key codes
+    const val TOOLBAR_CLIPBOARD = -80
+    const val TOOLBAR_SETTINGS = -81
+    const val TOOLBAR_THEME = -82
+    const val TOOLBAR_ONEHAND = -83
+    const val TOOLBAR_VOICE = -84
+    const val TOOLBAR_INCOGNITO = -85
+}
+
+/** Emoji category enum for tracking current category in the emoji panel */
+enum class EmojiCategory {
+    SMILEYS, GESTURES, ANIMALS, FOOD, ACTIVITIES, TRAVEL, OBJECTS, SYMBOLS, RECENT
 }
