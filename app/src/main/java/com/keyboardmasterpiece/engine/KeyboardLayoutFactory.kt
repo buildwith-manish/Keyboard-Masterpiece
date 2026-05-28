@@ -47,17 +47,20 @@ object KeyboardLayoutFactory {
             listOf(a(if (upper) "⇧" else "⇧", KeyCodes.SHIFT, 1.25f)) + "zxcvbnm".map { c(it.toString(), altFor(it)) } + a("⌫", KeyCodes.BACKSPACE, 1.25f)
         }
 
+        // TASK3 — Photo picker and file picker buttons added to toolbar row
         // FIX: MED-005 — RTL: reverse bottom row key order
         val bottomRow = if (isRtl) {
             listOf(
-                a("⏎", KeyCodes.ENTER, sideKeyWeight), a("🙂", KeyCodes.EMOJI, .9f),
-                a("space", KeyCodes.SPACE, spaceWeight), a("🎙", KeyCodes.VOICE, .9f), a("🌐", KeyCodes.LANGUAGE, .9f),
+                a("⏎", KeyCodes.ENTER, sideKeyWeight), a("📷", KeyCodes.PHOTO_PICKER, .9f),
+                a("📎", KeyCodes.FILE_PICKER, .9f),
+                a("space", KeyCodes.SPACE, spaceWeight), a("🌐", KeyCodes.LANGUAGE, .9f),
                 a("?123", KeyCodes.SYMBOLS, sideKeyWeight)
             )
         } else {
             listOf(
-                a("?123", KeyCodes.SYMBOLS, sideKeyWeight), a("🌐", KeyCodes.LANGUAGE, .9f), a("🎙", KeyCodes.VOICE, .9f),
-                a("space", KeyCodes.SPACE, spaceWeight), a("🙂", KeyCodes.EMOJI, .9f), a("⏎", KeyCodes.ENTER, sideKeyWeight)
+                a("?123", KeyCodes.SYMBOLS, sideKeyWeight), a("🌐", KeyCodes.LANGUAGE, .9f),
+                a("📷", KeyCodes.PHOTO_PICKER, .9f), a("📎", KeyCodes.FILE_PICKER, .9f),
+                a("space", KeyCodes.SPACE, spaceWeight), a("⏎", KeyCodes.ENTER, sideKeyWeight)
             )
         }
 

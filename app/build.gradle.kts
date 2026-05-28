@@ -41,4 +41,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // FIX: FINAL-001 / FINAL-002 — EncryptedSharedPreferences for clipboard + personal words
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // TASK3 — InputConnectionCompat.commitContent() for file sending from keyboard
+    implementation("androidx.core:core:1.15.0")
 }
