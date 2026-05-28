@@ -16,6 +16,8 @@ import kotlin.math.min
  * FIX: BUG-010 — Debounce suggestAsync() to avoid flooding the background thread.
  * FIX: FINAL-003 — Thread-safe Trie insert with @Synchronized.
  * FIX: FINAL-006 — Use StringBuilder in collectWords to avoid O(n²) string concatenation.
+ * Feature 6: Upgraded with trigram model, expanded word list (300+), word frequency tracking,
+ *   context-aware suggestions (two previous words), and position-aware capitalization.
  */
 class SuggestionEngine(private val prefs: UserPreferences) {
 
@@ -32,22 +34,120 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         private const val DEBOUNCE_DELAY_MS = 30L
     }
 
+    // Feature 6: Expanded common words list (300+ words)
     private val commonWords = ("the be to of and a in that have i it for not on with he as you do at this but his by from " +
         "they we say her she or an will my one all would there their what so up out if about who get which go me " +
         "when make can like time no just him know take people into year your good some could them see other than then " +
         "now look only come its over think also back after use two how our work first well way even new want because " +
-        "any these give day most us hello thanks please keyboard message today tomorrow love great yes no ok sure").split(' ')
+        "any these give day most us hello thanks please keyboard message today tomorrow love great yes no ok sure " +
+        "been call world still each long much hand high old right tell find here thing many before small turn own " +
+        "same big play end run read help few point change large off need house try again move live place man should " +
+        "part head every last never left under line hard idea open seem next kind begin life city always away real " +
+        "start close night stop home state group country both paper might while picture since study keep child eye " +
+        "never last let thought school important family side door side car already body class white feel black order " +
+        "late young write story develop present face car face power field problem light school hold result rest " +
+        "morning show water money plan example student group girl guy wait table area century team outside car " +
+        "morning show city early building figure certain food remember nothing stand develop name kind service " +
+        "company program market force result experience class matter sense product effect class market reason " +
+        "center stage form today moment among stand however six remember local further level face rate teacher " +
+        "question maybe little pretty sure love often enough probably actually usually together different really " +
+        "important possible national following social economic development education probably certainly management " +
+        "political research community available simply general information health support including whether especially " +
+        "specific several likely actually usually environment simply window practice standard material conference " +
+        "brother sister mother father daughter son husband wife friend colleague professor doctor student teacher " +
+        "monday tuesday wednesday thursday friday saturday sunday january february march april may june july " +
+        "august september october november december spring summer winter autumn yesterday today tomorrow morning " +
+        "evening night afternoon weekend birthday holiday christmas thanksgiving halloween valentine easter").split(' ')
 
     private val bigrams = mapOf(
         "thank" to listOf("you", "you!", "you."),
-        "good" to listOf("morning", "night", "luck"),
-        "see" to listOf("you", "this", "that"),
-        "how" to listOf("are", "is", "was"),
-        "i" to listOf("am", "will", "have"),
-        "you" to listOf("are", "can", "will"),
-        "let" to listOf("me", "us"),
-        "happy" to listOf("birthday", "to")
+        "good" to listOf("morning", "night", "luck", "job"),
+        "see" to listOf("you", "this", "that", "later"),
+        "how" to listOf("are", "is", "was", "do", "about"),
+        "i" to listOf("am", "will", "have", "was", "can", "don't", "didn't", "think", "know", "want", "need"),
+        "you" to listOf("are", "can", "will", "have", "know", "want", "need", "think"),
+        "let" to listOf("me", "us", "it", "them"),
+        "happy" to listOf("birthday", "to", "new"),
+        "we" to listOf("are", "have", "will", "can", "need", "should"),
+        "they" to listOf("are", "have", "will", "can", "were"),
+        "it" to listOf("is", "was", "will", "has", "can"),
+        "that" to listOf("is", "was", "will", "the", "this"),
+        "this" to listOf("is", "was", "morning", "time", "week"),
+        "the" to listOf("other", "same", "next", "first", "last", "new", "old", "most"),
+        "my" to listOf("friend", "name", "phone", "house", "car", "family"),
+        "is" to listOf("the", "a", "not", "very", "really", "going"),
+        "was" to listOf("the", "a", "not", "very", "really", "going"),
+        "are" to listOf("the", "you", "we", "they", "not", "very"),
+        "have" to listOf("a", "the", "been", "to", "some"),
+        "will" to listOf("be", "have", "do", "go", "make"),
+        "can" to listOf("you", "we", "i", "do", "be", "see"),
+        "do" to listOf("you", "we", "they", "not", "it"),
+        "not" to listOf("the", "a", "going", "very", "really"),
+        "very" to listOf("much", "good", "nice", "well", "big"),
+        "going" to listOf("to", "on", "out"),
+        "want" to listOf("to", "a", "the"),
+        "need" to listOf("to", "a", "the", "some"),
+        "like" to listOf("to", "the", "a", "this", "that"),
+        "what" to listOf("is", "are", "was", "were", "do", "time"),
+        "please" to listOf("help", "send", "call", "let", "tell"),
+        "just" to listOf("like", "want", "need", "got", "did"),
+        "really" to listOf("like", "want", "need", "appreciate", "enjoy"),
+        "also" to listOf("want", "need", "like", "know", "think")
     )
+
+    // Feature 6: Trigram model — 3-word sequences for better prediction
+    private val trigrams = mapOf<Pair<String, String>, List<String>>(
+        // Common sentence openers
+        ("i" to "am") to listOf("going", "not", "so", "doing", "happy", "sorry", "glad", "fine"),
+        ("i" to "will") to listOf("be", "do", "go", "have", "not", "try", "call", "send", "let"),
+        ("i" to "have") to listOf("a", "been", "to", "not", "the", "some", "never"),
+        ("i" to "can") to listOf("do", "not", "see", "help", "make", "get", "tell"),
+        ("i" to "don't") to listOf("know", "want", "think", "have", "like", "need"),
+        ("i" to "didn't") to listOf("know", "want", "think", "mean", "say", "do"),
+        ("i" to "think") to listOf("it", "that", "we", "you", "i", "so", "this"),
+        ("i" to "know") to listOf("that", "you", "what", "how", "it", "i"),
+        ("i" to "want") to listOf("to", "a", "the", "you", "some"),
+        ("i" to "need") to listOf("to", "a", "the", "some", "your"),
+        // Greetings and social
+        ("how" to "are") to listOf("you", "you?", "you!"),
+        ("nice" to "to") to listOf("meet", "see", "have"),
+        ("good" to "morning") to listOf("!", "everyone", "dear"),
+        ("thank" to "you") to listOf("very", "so", "for"),
+        ("see" to "you") to listOf("later", "soon", "tomorrow", "then"),
+        // Common phrases
+        ("what" to "do") to listOf("you", "we", "they", "i"),
+        ("what" to "is") to listOf("the", "your", "this", "that", "a"),
+        ("what" to "are") to listOf("you", "the", "they", "we"),
+        ("that" to "is") to listOf("a", "the", "not", "very", "why", "right"),
+        ("it" to "is") to listOf("a", "the", "not", "very", "really", "going"),
+        ("this" to "is") to listOf("a", "the", "not", "very", "my", "our"),
+        ("do" to "you") to listOf("want", "need", "know", "think", "have", "like"),
+        ("we" to "are") to listOf("going", "not", "the", "so", "very"),
+        ("we" to "have") to listOf("a", "been", "to", "the", "not"),
+        ("they" to "are") to listOf("going", "not", "the", "very", "so"),
+        ("there" to "is") to listOf("a", "no", "not", "the"),
+        ("let" to "me") to listOf("know", "go", "see", "help", "think", "tell"),
+        ("let" to "us") to listOf("know", "go", "see", "think"),
+        // Time expressions
+        ("in" to "the") to listOf("morning", "evening", "afternoon", "world", "future"),
+        ("on" to "the") to listOf("way", "other", "phone", "table", "weekend"),
+        ("at" to "the") to listOf("moment", "time", "end", "beginning"),
+        // Actions
+        ("going" to "to") to listOf("be", "do", "go", "have", "make", "the"),
+        ("want" to "to") to listOf("go", "do", "be", "have", "see", "make", "know"),
+        ("need" to "to") to listOf("go", "do", "be", "have", "see", "make", "know", "get"),
+        ("have" to "to") to listOf("go", "do", "be", "make", "get", "see"),
+        ("used" to "to") to listOf("be", "do", "go", "have"),
+        // Weather / states
+        ("it" to "was") to listOf("a", "the", "not", "very", "really", "so"),
+        ("it" to "has") to listOf("been", "a", "not", "the")
+    )
+
+    // Feature 6: Word frequency map for ranking suggestions
+    private val wordFrequency = mutableMapOf<String, Int>()
+
+    // Feature 6: Track whether cursor is at sentence start for capitalization suggestions
+    private var isAtSentenceStart = false
 
     // FIX: HIGH-003 — Trie dictionary for O(k) prefix lookup
     private val trie = TrieDictionary()
@@ -56,10 +156,13 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         // Build the trie with common words at startup
         for (word in commonWords) {
             trie.insert(word)
+            // Feature 6: Initialize frequency for common words (rank-based)
+            wordFrequency[word] = (wordFrequency[word] ?: 0) + 1
         }
         // Also load personal words into trie
         for (word in prefs.personalWords()) {
             trie.insert(word)
+            wordFrequency[word] = (wordFrequency[word] ?: 0) + 1
         }
     }
 
@@ -68,11 +171,12 @@ class SuggestionEngine(private val prefs: UserPreferences) {
      * FIX: BUG-010 — Debounce: remove pending suggestion runs before posting a new one
      * with a short delay to avoid flooding the background thread on rapid key presses.
      * Post result back to main thread via mainHandler.
+     * Feature 6: Now accepts two previous words for trigram context.
      */
-    fun suggestAsync(prefix: String, previousWord: String?, callback: (List<String>) -> Unit) {
+    fun suggestAsync(prefix: String, previousWord: String?, previousWord2: String? = null, callback: (List<String>) -> Unit) {
         bgHandler.removeCallbacksAndMessages(SUGGESTION_TOKEN)
         bgHandler.postAtTime({
-            val result = suggest(prefix, previousWord)
+            val result = suggest(prefix, previousWord, previousWord2)
             latest.set(result)
             mainHandler.post { callback(result) }
         }, SUGGESTION_TOKEN, SystemClock.uptimeMillis() + DEBOUNCE_DELAY_MS)
@@ -89,6 +193,8 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         prefs.savePersonalWords(set.toSet())
         // Keep trie in sync
         trie.insert(clean)
+        // Feature 6: Update word frequency
+        wordFrequency[clean] = (wordFrequency[clean] ?: 0) + 1
     }
 
     /** FIX: HIGH-002 — Proper shutdown of HandlerThread. */
@@ -111,12 +217,27 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         }
     }
 
-    private fun suggest(prefixRaw: String, previousWord: String?): List<String> {
+    /** Feature 6: Set position context for capitalization suggestions. */
+    fun setSentenceStart(atStart: Boolean) {
+        isAtSentenceStart = atStart
+    }
+
+    /**
+     * Feature 6: Upgraded suggest with trigram support, frequency-based ranking,
+     * and position-aware capitalization.
+     */
+    private fun suggest(prefixRaw: String, previousWord: String?, previousWord2: String? = null): List<String> {
         val prefix = prefixRaw.lowercase(Locale.US).filter { it.isLetter() || it == '\'' }
         val out = LinkedHashSet<String>()
 
-        // Context from previous word (bigrams)
-        if (prefix.isEmpty() && previousWord != null) {
+        // Feature 6: Trigram context — use two previous words when available
+        if (prefix.isEmpty() && previousWord != null && previousWord2 != null) {
+            val key = Pair(previousWord2.lowercase(Locale.US), previousWord.lowercase(Locale.US))
+            trigrams[key]?.let { out.addAll(it) }
+        }
+
+        // Context from previous word (bigrams) — always try if trigrams didn't fill enough
+        if (prefix.isEmpty() && previousWord != null && out.size < 3) {
             bigrams[previousWord.lowercase(Locale.US)]?.let { out.addAll(it) }
         }
 
@@ -124,7 +245,9 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         if (prefix.isNotEmpty()) {
             // Prefix match from Trie — much faster than linear scan
             val trieResults = trie.getSuggestions(prefix, maxResults = 8)
-            for (word in trieResults) {
+            // Feature 6: Sort by frequency for better ranking
+            val sorted = trieResults.sortedByDescending { wordFrequency[it] ?: 0 }
+            for (word in sorted) {
                 if (word != prefix) out.add(word)
             }
 
@@ -132,7 +255,17 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             val fuzzyCandidates = trie.getSuggestions(prefix.substring(0, min(prefix.length, 2)), maxResults = 50)
             fuzzyCandidates.asSequence()
                 .filter { it.length in (prefix.length - 1)..(prefix.length + 3) && distance(prefix, it) <= 1 }
+                .sortedByDescending { wordFrequency[it] ?: 0 }
                 .take(5)
+                .forEach(out::add)
+        }
+
+        // Feature 6: If no prefix and no context, suggest common words by frequency
+        if (out.isEmpty() && prefix.isEmpty() && previousWord == null) {
+            commonWords.asSequence()
+                .filter { it.length > 2 }
+                .sortedByDescending { wordFrequency[it] ?: 0 }
+                .take(6)
                 .forEach(out::add)
         }
 
@@ -140,7 +273,16 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             out.addAll(listOf("the", "and", "you", "to", "for"))
         }
 
-        return out.take(3)
+        // Feature 6: Position-aware capitalization — capitalize first suggestion at sentence start
+        val results = out.take(3).toMutableList()
+        if (isAtSentenceStart && results.isNotEmpty()) {
+            val first = results[0]
+            if (first.all { it.isLetter() }) {
+                results[0] = first.replaceFirstChar { it.uppercase() }
+            }
+        }
+
+        return results
     }
 
     fun autocorrect(word: String): String? {
@@ -151,7 +293,8 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         // FIX: HIGH-003 — Limit edit-distance candidates from trie prefix
         val prefix = clean.substring(0, min(clean.length, 2))
         val candidates = trie.getSuggestions(prefix, maxResults = 80) + commonWords.take(50)
-        val candidate = candidates.minByOrNull { distance(clean, it) } ?: return null
+        // Feature 6: Prefer more frequent words as correction candidates
+        val candidate = candidates.minByOrNull { distance(clean, it) + (1000 - (wordFrequency[it] ?: 0)) * 0.01 } ?: return null
 
         val dist = distance(clean, candidate)
         return if (candidate != clean && dist <= 1) candidate else null
