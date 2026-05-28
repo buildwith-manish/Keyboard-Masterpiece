@@ -58,4 +58,8 @@ object KeyCodes {
     const val DOWN = -49
     const val INCOGNITO = -50
     const val THEME = -51
+    /** TASK3 — Photo picker button in keyboard toolbar */
+    const val PHOTO_PICKER = -52
+    /** TASK3 — File picker button (PDF, docs, etc.) in keyboard toolbar */
+    const val FILE_PICKER = -53
 }

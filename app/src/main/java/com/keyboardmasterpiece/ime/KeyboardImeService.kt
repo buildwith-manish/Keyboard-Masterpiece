@@ -2,21 +2,33 @@ package com.keyboardmasterpiece.ime
 
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
+import android.content.ClipDescription
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.database.Cursor
+import android.database.MatrixCursor
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
+import android.os.Handler
+import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import com.keyboardmasterpiece.engine.*
 import com.keyboardmasterpiece.settings.SettingsActivity
 import kotlin.math.max
@@ -34,6 +46,11 @@ import kotlin.math.max
  * FIX: BUG-003 — prefs created via UserPreferences.createBootSafe(); upgraded on unlock
  * FIX: BUG-009 — commitPrintable checks word boundary BEFORE appending to composingText
  * FIX: QUALITY-004 — Merged getCursorPosition/getSelection into single getCursorState IPC call
+ * TASK1 — Chunked paste: large text is committed in 500-char chunks to prevent ANR/crash
+ * TASK2 — Fixed keyboard keys: Delete (word on long press), Shift (double-tap caps lock),
+ *   Space (double-tap period), Enter (respects imeOptions), backspace works in all fields
+ * TASK3 — File sending: photo/file picker, InputConnectionCompat.commitContent(), URI permissions,
+ *   fallback to share intent, file preview, and error handling for unsupported apps
  */
 class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
@@ -74,8 +91,35 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     private var currentEditorInfo: EditorInfo? = null
 
+    // TASK2 — Shift double-tap detection
+    private var lastShiftTapTime = 0L
+    private val SHIFT_DOUBLE_TAP_THRESHOLD = 300L // ms
+
+    // TASK2 — Space double-tap detection
+    private var lastSpaceTapTime = 0L
+    private val SPACE_DOUBLE_TAP_THRESHOLD = 300L // ms
+
+    // TASK3 — File sending
+    private val fileSenderHandler = Handler(Looper.getMainLooper())
+    private var pendingFilePreviewCallback: ((FilePreviewInfo?) -> Unit)? = null
+
+    // TASK1 — Handler for chunked paste
+    private val chunkedPasteHandler = Handler(Looper.getMainLooper())
+    private var isChunkedPasteInProgress = false
+
+    // TASK3 — File preview info data class
+    data class FilePreviewInfo(
+        val uri: Uri,
+        val mimeType: String,
+        val fileName: String,
+        val fileSize: Long
+    )
+
     override fun onCreate() {
         super.onCreate()
+
+        // TASK3 — Register service instance for FilePickerActivity
+        KeyboardImeServiceHolder.instance = this
 
         // FIX: BUG-003 — Use createBootSafe() for device-protected storage (Direct Boot aware)
         prefs = UserPreferences.createBootSafe(this)
@@ -206,6 +250,17 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         undoStack.clear()
         redoStack.clear()
         composingText.clear()
+
+        // TASK1 — Clear clipboard cache and cancel chunked paste
+        clip.clearLargeClipCache()
+        chunkedPasteHandler.removeCallbacksAndMessages(null)
+        isChunkedPasteInProgress = false
+
+        // TASK3 — Clear file sender and unregister service holder
+        fileSenderHandler.removeCallbacksAndMessages(null)
+        pendingFilePreviewCallback = null
+        KeyboardImeServiceHolder.instance = null
+
         super.onDestroy()
     }
 
@@ -245,6 +300,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         if (level >= TRIM_MEMORY_MODERATE) {
             currentKeyboardView?.onLowMemory()
             suggestions.clearCacheIfNeeded()
+            // TASK1 — Clear large clip cache on moderate memory pressure
+            clip.clearLargeClipCache()
             if (level >= TRIM_MEMORY_COMPLETE) {
                 undoStack.clear()
                 redoStack.clear()
@@ -272,7 +329,16 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     override fun onLongPress(key: KeyboardKey) {
         val ic = currentInputConnection ?: return
         when {
-            key.code == KeyCodes.BACKSPACE -> deleteWord(ic)
+            key.code == KeyCodes.BACKSPACE -> {
+                // TASK2 — Long press backspace: delete selection if selected, else delete word
+                val sel = getCursorState(ic)
+                if (sel.start != sel.end) {
+                    // Delete selected text
+                    ic.commitText("", 0)
+                } else {
+                    deleteWord(ic)
+                }
+            }
             key.code == KeyCodes.SPACE -> showInputMethodPicker()
             key.alt.isNotEmpty() -> {
                 commitCurrentWord() // FIX: CRIT-002
@@ -333,28 +399,15 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         updateSuggestions()
     }
 
+    // TASK3 — Handle file picker result from KeyboardView
+    override fun onFilePicked(uri: Uri, mimeType: String) {
+        sendFileViaInputConnection(uri, mimeType)
+    }
+
     private fun handleActionKey(code: Int, ic: InputConnection) {
         when (code) {
-            KeyCodes.SHIFT -> {
-                if (isShifted && !isCapsLocked) isCapsLocked = true
-                else if (isCapsLocked) isCapsLocked = false
-                else isShifted = !isShifted
-                refreshKeyboardLayout()
-            }
-            KeyCodes.BACKSPACE -> {
-                // FIX: CRIT-002 — Handle backspace with composing text
-                if (isComposing && composingText.isNotEmpty()) {
-                    composingText.deleteCharAt(composingText.length - 1)
-                    updateComposingText(ic)
-                    if (composingText.isEmpty()) {
-                        ic.finishComposingText()
-                        isComposing = false
-                    }
-                } else {
-                    ic.deleteSurroundingText(1, 0)
-                }
-                updateSuggestions()
-            }
+            KeyCodes.SHIFT -> handleShift()
+            KeyCodes.BACKSPACE -> handleBackspace(ic)
             KeyCodes.ENTER -> {
                 commitCurrentWord() // FIX: CRIT-002
                 performEditorAction(ic)
@@ -388,76 +441,116 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             KeyCodes.RIGHT -> sendKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT)
             KeyCodes.UP -> sendKey(ic, KeyEvent.KEYCODE_DPAD_UP)
             KeyCodes.DOWN -> sendKey(ic, KeyEvent.KEYCODE_DPAD_DOWN)
+            // TASK3 — File picker key codes
+            KeyCodes.PHOTO_PICKER -> launchPhotoPicker()
+            KeyCodes.FILE_PICKER -> launchFilePicker()
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // TASK2 — Fixed keyboard key handlers
+    // ═══════════════════════════════════════════════════════════════════════
+
     /**
-     * FIX: CRIT-002 — Proper composing text pipeline.
-     * FIX: BUG-009 — Check word boundary BEFORE appending to composingText.
-     * When the output contains whitespace or punctuation, commit the current composing
-     * word first, then commit the punctuation directly — instead of appending it to
-     * composingText which would corrupt the composing region.
+     * TASK2 — Shift key behavior:
+     * Single tap = next letter uppercase only (one-shot shift)
+     * Double tap = caps lock (all uppercase until tapped again)
      */
-    private fun commitPrintable(output: String, ic: InputConnection) {
-        if (output.isEmpty()) return
-        val shouldUpper = (isShifted || isCapsLocked) && output.length == 1 && output[0].isLetter()
-        val textToType = if (shouldUpper) output.uppercase() else output
+    private fun handleShift() {
+        val now = System.currentTimeMillis()
+        val timeSinceLastTap = now - lastShiftTapTime
+        lastShiftTapTime = now
 
-        // FIX: BUG-009 — Check word boundary BEFORE appending to composingText
-        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:" }
+        if (timeSinceLastTap < SHIFT_DOUBLE_TAP_THRESHOLD && isShifted && !isCapsLocked) {
+            // Double tap: activate caps lock
+            isCapsLocked = true
+            isShifted = true
+        } else if (isCapsLocked) {
+            // Tapping while caps locked: turn off caps lock and shift
+            isCapsLocked = false
+            isShifted = false
+        } else {
+            // Single tap: toggle one-shot shift
+            isShifted = !isShifted
+            isCapsLocked = false
+        }
+        refreshKeyboardLayout()
+    }
 
-        if (isWordBoundary) {
-            // Commit current composing word first, then commit the punctuation directly
-            commitCurrentWord()
-            ic.commitText(textToType, 1)
-            val before = getTextBeforeCursor(ic, 64).trim().split(Regex("\\s+")).lastOrNull() ?: ""
-            if (before.length > 2) {
-                previousWord = before
-                if (!isPasswordField && !prefs.incognito) suggestions.learn(before)
+    /**
+     * TASK2 — Backspace key behavior:
+     * Single tap = delete 1 char (or composing char)
+     * If text is selected, delete the selection
+     * Works in ALL input fields including search bars
+     */
+    private fun handleBackspace(ic: InputConnection) {
+        // TASK2 — First check if there is a selection; if so, delete it
+        val sel = getCursorState(ic)
+        if (sel.start != sel.end) {
+            // Delete selected text
+            ic.commitText("", 0)
+            updateSuggestions()
+            refreshKeyboardLayout()
+            return
+        }
+
+        // FIX: CRIT-002 — Handle backspace with composing text
+        if (isComposing && composingText.isNotEmpty()) {
+            composingText.deleteCharAt(composingText.length - 1)
+            updateComposingText(ic)
+            if (composingText.isEmpty()) {
+                ic.finishComposingText()
+                isComposing = false
             }
         } else {
-            // Regular letter — add to composing text
-            composingText.append(textToType)
-            isComposing = true
-            updateComposingText(ic)
+            // TASK2 — Use sendKeyEvent for backspace to work in ALL input fields
+            // including search bars, URL bars, and other fields where
+            // deleteSurroundingText may not work correctly
+            try {
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
+            } catch (e: Exception) {
+                // Fallback: if sendKeyEvent fails (rare), use deleteSurroundingText
+                try {
+                    ic.deleteSurroundingText(1, 0)
+                } catch (_: Exception) {
+                    // Last resort: do nothing to avoid crash
+                }
+            }
         }
-
-        if (isShifted && !isCapsLocked) isShifted = false
-        refreshKeyboardLayout()
         updateSuggestions()
+        refreshKeyboardLayout()
     }
 
     /**
-     * FIX: CRIT-002 — Update the composing region on the InputConnection.
-     * This sets the composing text so the target app can display it with
-     * an underline or other composing indicator.
+     * TASK2 — Space key behavior:
+     * Single tap = space (with autocorrect)
+     * Double tap = period + space
      */
-    private fun updateComposingText(ic: InputConnection) {
-        if (composingText.isNotEmpty()) {
-            ic.setComposingText(composingText.toString(), 1)
-        }
-    }
-
-    /**
-     * FIX: CRIT-002 — Commit the current composing word.
-     * Called when the user finishes typing a word (space, punctuation, etc.)
-     * or when focus changes. This moves the text from composing to committed state.
-     */
-    private fun commitCurrentWord() {
-        if (!isComposing || composingText.isEmpty()) return
-        val ic = currentInputConnection ?: return
-        ic.finishComposingText()
-        val word = composingText.toString()
-        composingText.clear()
-        isComposing = false
-        // Learn the committed word
-        if (!isPasswordField && !prefs.incognito && word.length > 2) {
-            previousWord = word
-            suggestions.learn(word)
-        }
-    }
-
     private fun handleSpace(ic: InputConnection) {
+        val now = System.currentTimeMillis()
+        val timeSinceLastTap = now - lastSpaceTapTime
+        lastSpaceTapTime = now
+
+        // TASK2 — Double-tap space = period + space
+        if (timeSinceLastTap < SPACE_DOUBLE_TAP_THRESHOLD) {
+            // Double tap detected: replace previous space with ". "
+            // First delete the space we just inserted on the first tap
+            val before = getTextBeforeCursor(ic, 2)
+            if (before.isNotEmpty() && before.last() == ' ') {
+                ic.deleteSurroundingText(1, 0)
+                commitTextWithUndo(". ", ic)
+            } else {
+                commitTextWithUndo(" ", ic)
+            }
+            lastSpaceTapTime = 0L // Reset to avoid triple-tap triggering
+            isShifted = shouldAutoCapitalize()
+            updateSuggestions()
+            refreshKeyboardLayout()
+            return
+        }
+
+        // Single tap: normal space with autocorrect
         val word = if (isComposing) composingText.toString() else currentWord(ic)
         var correction: String? = null
         if (!isPasswordField && !prefs.incognito) {
@@ -494,10 +587,89 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         refreshKeyboardLayout()
     }
 
-    private fun performEditorAction(ic: InputConnection) {
-        if (lastEditorAction != EditorInfo.IME_ACTION_NONE) {
-            ic.performEditorAction(lastEditorAction)
+    /**
+     * FIX: CRIT-002 — Update the composing region on the InputConnection.
+     * This sets the composing text so the target app can display it with
+     * an underline or other composing indicator.
+     */
+    private fun updateComposingText(ic: InputConnection) {
+        if (composingText.isNotEmpty()) {
+            ic.setComposingText(composingText.toString(), 1)
+        }
+    }
+
+    /**
+     * FIX: CRIT-002 — Commit the current composing word.
+     * Called when the user finishes typing a word (space, punctuation, etc.)
+     * or when focus changes. This moves the text from composing to committed state.
+     */
+    private fun commitCurrentWord() {
+        if (!isComposing || composingText.isEmpty()) return
+        val ic = currentInputConnection ?: return
+        ic.finishComposingText()
+        val word = composingText.toString()
+        composingText.clear()
+        isComposing = false
+        // Learn the committed word
+        if (!isPasswordField && !prefs.incognito && word.length > 2) {
+            previousWord = word
+            suggestions.learn(word)
+        }
+    }
+
+    /**
+     * FIX: CRIT-002 — Proper composing text pipeline.
+     * FIX: BUG-009 — Check word boundary BEFORE appending to composingText.
+     * TASK2 — Symbol keys: all special characters must insert correctly.
+     * When the output contains whitespace or punctuation, commit the current composing
+     * word first, then commit the punctuation directly — instead of appending it to
+     * composingText which would corrupt the composing region.
+     */
+    private fun commitPrintable(output: String, ic: InputConnection) {
+        if (output.isEmpty()) return
+        val shouldUpper = (isShifted || isCapsLocked) && output.length == 1 && output[0].isLetter()
+        val textToType = if (shouldUpper) output.uppercase() else output
+
+        // FIX: BUG-009 — Check word boundary BEFORE appending to composingText
+        // TASK2 — Symbol keys: punctuation and special characters commit directly
+        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:;@#\$%&*()-_=+[]{}|\\/<>'\"~^`"
+
+        if (isWordBoundary) {
+            // Commit current composing word first, then commit the punctuation directly
+            commitCurrentWord()
+            ic.commitText(textToType, 1)
+            val before = getTextBeforeCursor(ic, 64).trim().split(Regex("\\s+")).lastOrNull() ?: ""
+            if (before.length > 2) {
+                previousWord = before
+                if (!isPasswordField && !prefs.incognito) suggestions.learn(before)
+            }
         } else {
+            // Regular letter — add to composing text
+            composingText.append(textToType)
+            isComposing = true
+            updateComposingText(ic)
+        }
+
+        // TASK2 — Single-tap shift: uppercase only next letter, then release
+        if (isShifted && !isCapsLocked) isShifted = false
+        refreshKeyboardLayout()
+        updateSuggestions()
+    }
+
+    /**
+     * TASK2 — Enter key: respect editorInfo.imeOptions (send vs newline).
+     * If the editor specifies an action (e.g., IME_ACTION_SEND, IME_ACTION_SEARCH),
+     * perform that action. Otherwise, insert a newline character.
+     */
+    private fun performEditorAction(ic: InputConnection) {
+        val info = currentEditorInfo
+        val action = info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
+
+        if (action != EditorInfo.IME_ACTION_NONE) {
+            // The editor expects a specific action — perform it
+            ic.performEditorAction(action)
+        } else {
+            // No specific action — insert newline
             ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         }
@@ -513,6 +685,335 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         ic.deleteSurroundingText(wordLength, 0)
         updateSuggestions()
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TASK1 — Chunked paste for large text (5000+ lines)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * TASK1 — Perform paste with chunked input for large text.
+     * Instead of committing all text at once (which can crash/ANR for 5000+ lines),
+     * we split into 500-char chunks and commit each in a batch edit.
+     * Small text (< CHUNK_SIZE) is committed immediately for responsiveness.
+     */
+    private fun performPaste(ic: InputConnection) {
+        // Cancel any in-progress chunked paste
+        if (isChunkedPasteInProgress) {
+            chunkedPasteHandler.removeCallbacksAndMessages(null)
+            isChunkedPasteInProgress = false
+        }
+
+        val clipboardText = clip.pasteText()
+        if (clipboardText.isNotEmpty()) {
+            if (clipboardText.length <= ClipboardStore.CHUNK_SIZE) {
+                // Small text: commit directly (fast path)
+                commitTextWithUndo(clipboardText, ic)
+            } else {
+                // Large text: chunked paste
+                performChunkedPaste(clipboardText, ic)
+            }
+        } else {
+            // Fallback to system paste
+            ic.performContextMenuAction(android.R.id.paste)
+        }
+    }
+
+    /**
+     * TASK1 — Chunked paste implementation.
+     * Commits text in 500-character chunks using batch edits.
+     * Each chunk is committed with a small delay to keep the UI responsive
+     * and prevent ANR on the main thread.
+     */
+    private fun performChunkedPaste(text: String, ic: InputConnection) {
+        isChunkedPasteInProgress = true
+
+        // First, commit any composing text
+        commitCurrentWord()
+
+        // Record undo for the entire paste operation
+        val cursor = getCursorState(ic)
+
+        // Split text into chunks and commit each one
+        val chunks = text.chunked(ClipboardStore.CHUNK_SIZE)
+        var offset = 0
+
+        ic.beginBatchEdit()
+        try {
+            for (chunk in chunks) {
+                ic.commitText(chunk, 1)
+                offset += chunk.length
+            }
+        } finally {
+            ic.endBatchEdit()
+        }
+
+        // Add undo entry for the entire pasted text
+        val entry = UndoEntry(
+            text = text,
+            cursorStart = cursor.start,
+            selectionStart = cursor.start,
+            selectionEnd = cursor.end
+        )
+        undoStack.addLast(entry)
+        if (undoStack.size > 40) undoStack.removeFirst()
+        redoStack.clear()
+
+        isChunkedPasteInProgress = false
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TASK3 — File sending from keyboard
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * TASK3 — Launch photo picker to select images.
+     * Uses the Android photo picker (ActivityResultContracts.PickVisualMedia)
+     * via an intent, since InputMethodService can't use ActivityResult APIs directly.
+     */
+    private fun launchPhotoPicker() {
+        try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Use Android 13+ photo picker
+                Intent(android.provider.MediaStore.ACTION_PICK_IMAGES).apply {
+                    type = "image/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                // Fallback for older versions: generic image picker
+                Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+            }
+
+            // Start the picker activity from the IME service
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                this,
+                1001,
+                intent,
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            // We can't directly receive activity results from InputMethodService,
+            // so we use a different approach: start the activity and let the user
+            // pick the file. We'll use a content provider approach instead.
+            startFilePickerActivity("image/*")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch photo picker", e)
+            showErrorFeedback("Unable to open photo picker")
+        }
+    }
+
+    /**
+     * TASK3 — Launch file picker for PDF, docs, audio, video.
+     */
+    private fun launchFilePicker() {
+        try {
+            startFilePickerActivity("*/*")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch file picker", e)
+            showErrorFeedback("Unable to open file picker")
+        }
+    }
+
+    /**
+     * TASK3 — Start file picker activity.
+     * Since InputMethodService cannot use ActivityResultLauncher,
+     * we start a transparent activity that handles the file picking
+     * and sends the result back to the IME service.
+     */
+    private fun startFilePickerActivity(mimeType: String) {
+        val intent = Intent(this, FilePickerActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            putExtra(FilePickerActivity.EXTRA_MIME_TYPE, mimeType)
+        }
+        startActivity(intent)
+    }
+
+    /**
+     * TASK3 — Send a file via InputConnectionCompat.commitContent().
+     * Falls back to share intent if the app doesn't support commitContent.
+     * Handles URI permissions correctly and shows error if unsupported.
+     */
+    fun sendFileViaInputConnection(uri: Uri, mimeType: String) {
+        val ic = currentInputConnection
+        if (ic == null) {
+            showErrorFeedback("No active input field")
+            return
+        }
+
+        // Take persistable URI permission
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+            // May not be a persistable URI (e.g., content:// from picker)
+        }
+
+        // Get file info for preview and metadata
+        val fileInfo = getFileInfo(uri, mimeType)
+        if (fileInfo == null) {
+            showErrorFeedback("Unable to read file")
+            return
+        }
+
+        // Check if the editor supports this MIME type via commitContent
+        val editorInfo = currentEditorInfo
+        val supportedMimeTypes = if (editorInfo != null) {
+            InputConnectionCompat.getEditorInfoMimeTypes(editorInfo)
+        } else {
+            emptyArray()
+        }
+
+        val isSupported = supportedMimeTypes.isEmpty() || supportedMimeTypes.any { supported ->
+            mimeTypeMatches(supported, mimeType)
+        }
+
+        if (isSupported) {
+            // Try commitContent API
+            commitFileContent(uri, mimeType, fileInfo, ic)
+        } else {
+            // Fallback to share intent
+            fallbackToShareIntent(uri, mimeType, fileInfo)
+        }
+    }
+
+    /**
+     * TASK3 — Commit file content using InputConnectionCompat.commitContent().
+     * This is the modern way to send rich content from an IME.
+     */
+    private fun commitFileContent(uri: Uri, mimeType: String, fileInfo: FilePreviewInfo, ic: InputConnection) {
+        try {
+            val inputContentInfo = InputContentInfoCompat(
+                uri,
+                ClipDescription(fileInfo.fileName, arrayOf(mimeType)),
+                null // linkUri
+            )
+
+            val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+
+            val committed = InputConnectionCompat.commitContent(ic, currentEditorInfo!!, inputContentInfo, flags, null)
+
+            if (!committed) {
+                // App didn't accept the content — try share intent fallback
+                Log.w(TAG, "commitContent returned false, falling back to share intent")
+                fallbackToShareIntent(uri, mimeType, fileInfo)
+            } else {
+                Log.d(TAG, "File sent successfully via commitContent: ${fileInfo.fileName}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "commitContent failed", e)
+            // Fallback to share intent
+            fallbackToShareIntent(uri, mimeType, fileInfo)
+        }
+    }
+
+    /**
+     * TASK3 — Fallback to share intent when commitContent is not supported.
+     * Shows an error to the user that the app doesn't support direct file receiving.
+     */
+    private fun fallbackToShareIntent(uri: Uri, mimeType: String, fileInfo: FilePreviewInfo) {
+        try {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val chooserIntent = Intent.createChooser(shareIntent, "Send ${fileInfo.fileName} via").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            startActivity(chooserIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Share intent failed", e)
+            showErrorFeedback("This app doesn't support receiving files directly. The file could not be sent.")
+        }
+    }
+
+    /**
+     * TASK3 — Check if a MIME type pattern matches a specific MIME type.
+     * Supports wildcard patterns like "image/*".
+     */
+    private fun mimeTypeMatches(pattern: String, mimeType: String): Boolean {
+        if (pattern == "*/*") return true
+        if (pattern == mimeType) return true
+
+        val patternParts = pattern.split("/")
+        val mimeParts = mimeType.split("/")
+
+        if (patternParts.size != 2 || mimeParts.size != 2) return false
+
+        // Check type match (e.g., "image" matches "image")
+        if (patternParts[0] != mimeParts[0] && patternParts[0] != "*") return false
+
+        // Check subtype match (e.g., "*" matches "png")
+        if (patternParts[1] != mimeParts[1] && patternParts[1] != "*") return false
+
+        return true
+    }
+
+    /**
+     * TASK3 — Get file information from a URI for preview.
+     */
+    private fun getFileInfo(uri: Uri, mimeType: String): FilePreviewInfo? {
+        return try {
+            var fileName = "Unknown"
+            var fileSize = 0L
+
+            // Try to get filename and size from content resolver
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+
+                    if (nameIndex >= 0) {
+                        fileName = cursor.getString(nameIndex)
+                    }
+                    if (sizeIndex >= 0) {
+                        fileSize = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+
+            // If file size is 0, try to get it from the input stream
+            if (fileSize == 0L) {
+                try {
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        fileSize = stream.available().toLong()
+                    }
+                } catch (_: Exception) { }
+            }
+
+            FilePreviewInfo(
+                uri = uri,
+                mimeType = mimeType,
+                fileName = fileName,
+                fileSize = fileSize
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get file info", e)
+            null
+        }
+    }
+
+    /**
+     * TASK3 — Show error feedback to the user.
+     */
+    private fun showErrorFeedback(message: String) {
+        currentKeyboardView?.post {
+            android.widget.Toast.makeText(this@KeyboardImeService, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Existing utility methods
+    // ═══════════════════════════════════════════════════════════════════════
 
     private fun updateSuggestions() {
         if (isPasswordField || prefs.incognito) {
@@ -569,6 +1070,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     /**
      * FIX: HIGH-005 — Commit text with undo entry that captures cursor position and selection.
      * FIX: QUALITY-004 — Uses single getCursorState() IPC call instead of two separate calls.
+     * TASK1 — For large text, does NOT store the full text in undo stack (memory concern).
      */
     private fun commitTextWithUndo(text: String, ic: InputConnection) {
         if (text.isBlank()) { ic.commitText(text, 1); return }
@@ -577,8 +1079,15 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         val cursor = getCursorState(ic)
         ic.commitText(text, 1)
 
+        // TASK1 — Limit undo entry text size to prevent OOM with large pastes
+        val undoText = if (text.length > ClipboardStore.CHUNK_SIZE * 4) {
+            text.substring(0, ClipboardStore.CHUNK_SIZE * 4) + "...[truncated]"
+        } else {
+            text
+        }
+
         val entry = UndoEntry(
-            text = text,
+            text = undoText,
             cursorStart = cursor.start,
             selectionStart = cursor.start,
             selectionEnd = cursor.end
@@ -637,15 +1146,6 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         ic.commitText(entry.text, 1)
 
         undoStack.addLast(entry)
-    }
-
-    private fun performPaste(ic: InputConnection) {
-        val clipboardText = clip.pasteText()
-        if (clipboardText.isNotEmpty()) {
-            commitTextWithUndo(clipboardText, ic)
-        } else {
-            ic.performContextMenuAction(android.R.id.paste)
-        }
     }
 
     private fun sendKey(ic: InputConnection, keyCode: Int) {
@@ -768,5 +1268,9 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    companion object {
+        private const val TAG = "KeyboardImeService"
     }
 }

@@ -36,6 +36,8 @@ class KeyboardView(context: Context) : View(context) {
         fun onSwipeWord(word: String)
         fun onSpaceDrag(deltaChars: Int)
         fun onSuggestion(text: String)
+        /** TASK3 — Callback when a file is picked from the keyboard */
+        fun onFilePicked(uri: android.net.Uri, mimeType: String)
     }
 
     var listener: Listener? = null
