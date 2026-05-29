@@ -42,3 +42,10 @@
 -dontwarn kotlin.**
 -keep class kotlin.Metadata { *; }
 -keep class * extends android.inputmethodservice.InputMethodService
+
+# --- Security Crypto / Tink (used by EncryptedSharedPreferences) ---
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn com.google.crypto.tink.**
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
