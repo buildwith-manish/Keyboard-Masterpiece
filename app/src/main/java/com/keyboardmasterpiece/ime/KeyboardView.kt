@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.SparseArray
 import android.view.MotionEvent
 import android.view.View
+import android.view.View.MeasureSpec
 import android.view.accessibility.AccessibilityNodeInfo
 import com.keyboardmasterpiece.engine.*
 import com.keyboardmasterpiece.nativebridge.NativeGestureBridge
