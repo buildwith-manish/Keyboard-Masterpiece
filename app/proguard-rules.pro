@@ -4,7 +4,7 @@
     public static java.lang.String classify(float[], int);
 }
 # Keep native methods via class member rule
--keepclasswithmembers class com.keyboardmasterpiece.nativebridge.NativeGestureBridge {
+-keepclasseswithmembers class com.keyboardmasterpiece.nativebridge.NativeGestureBridge {
     native <methods>;
 }
 -keepclasseswithmembernames class * {
