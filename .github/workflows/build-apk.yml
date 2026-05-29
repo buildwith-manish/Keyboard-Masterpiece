@@ -2,9 +2,13 @@ name: Build APK
 
 on:
   push:
-    branches: [main, develop, keyboard-android-production]
+    branches:
+      - main
+      - develop
+      - keyboard-android-production
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
