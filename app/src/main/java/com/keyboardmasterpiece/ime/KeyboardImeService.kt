@@ -28,6 +28,33 @@ import com.keyboardmasterpiece.engine.*
 import com.keyboardmasterpiece.settings.SettingsActivity
 import kotlin.math.max
 
+private const val TAG = "KeyboardImeService"
+
+/**
+ * Cursor state for undo/redo operations.
+ */
+internal data class CursorState(val start: Int, val end: Int)
+
+/**
+ * Undo entry with cursor position and selection info.
+ */
+internal data class UndoEntry(
+    val text: String,
+    val cursorStart: Int,
+    val selectionStart: Int,
+    val selectionEnd: Int
+)
+
+/**
+ * File preview info for the file sending feature.
+ */
+data class FilePreviewInfo(
+    val uri: Uri,
+    val mimeType: String,
+    val fileName: String,
+    val fileSize: Long
+)
+
 /**
  * PRODUCTION-GRADE InputMethodService
  *
@@ -73,8 +100,6 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     private val composingText = StringBuilder()
     private var isComposing = false
 
-    // FIX: QUALITY-004 — CursorState is in companion object below
-    // FIX: HIGH-005 — UndoEntry is in companion object below
     private val undoStack = ArrayDeque<UndoEntry>()
     private val redoStack = ArrayDeque<UndoEntry>()
 
@@ -100,8 +125,6 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     private var emojiCategory = EmojiCategory.SMILEYS
     private val recentEmojis = mutableListOf<String>()
     private val MAX_RECENT_EMOJIS = 20
-
-    // TASK3 — FilePreviewInfo is in companion object below
 
     override fun onCreate() {
         super.onCreate()
@@ -1378,26 +1401,4 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         return super.onKeyDown(keyCode, event)
     }
 
-    companion object {
-        private const val TAG = "KeyboardImeService"
-
-        // FIX: QUALITY-004 — CursorState data class (must be in companion for proper resolution)
-        internal data class CursorState(val start: Int, val end: Int)
-
-        // FIX: HIGH-005 — UndoEntry with cursor position and selection info
-        internal data class UndoEntry(
-            val text: String,
-            val cursorStart: Int,
-            val selectionStart: Int,
-            val selectionEnd: Int
-        )
-
-        // TASK3 — File preview info data class
-        data class FilePreviewInfo(
-            val uri: Uri,
-            val mimeType: String,
-            val fileName: String,
-            val fileSize: Long
-        )
-    }
 }
