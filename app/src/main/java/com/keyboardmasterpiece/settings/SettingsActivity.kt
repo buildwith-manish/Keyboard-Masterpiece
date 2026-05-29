@@ -82,7 +82,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val size = resources.displayMetrics.density.let { (48 * it).toInt() }
         val margin = resources.displayMetrics.density.let { (4 * it).toInt() }
-        val cornerRadius = resources.displayMetrics.density.let { 8 * it }
+        val cornerRadiusPx = resources.displayMetrics.density.let { 8 * it }
 
         ThemePalette.THEMES.forEachIndexed { index, theme ->
             val swatch = View(this).apply {
@@ -93,7 +93,7 @@ class SettingsActivity : AppCompatActivity() {
                 // Draw a rounded rectangle with theme background and accent border
                 val drawable = GradientDrawable().apply {
                     setColor(theme.keyColor)
-                    cornerRadius = cornerRadius
+                    this.cornerRadius = cornerRadiusPx
                     // Show accent color as a 3dp stroke
                     setStroke((3 * resources.displayMetrics.density).toInt(), theme.accentColor)
                 }
@@ -103,7 +103,7 @@ class SettingsActivity : AppCompatActivity() {
                 if (index == prefs.themeIndex) {
                     val selectedDrawable = GradientDrawable().apply {
                         setColor(theme.keyColor)
-                        cornerRadius = cornerRadius
+                        this.cornerRadius = cornerRadiusPx
                         setStroke((4 * resources.displayMetrics.density).toInt(), theme.accentColor)
                     }
                     background = selectedDrawable

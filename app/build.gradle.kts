@@ -51,10 +51,10 @@ android {
             // Only populate if all four variables are present → avoids build failure on debug
             if (resolvedKeystoreFile != null && resolvedKeystorePassword != null &&
                 resolvedKeyAlias != null && resolvedKeyPassword != null) {
-                storeFile = file(resolvedKeystoreFile!!)
-                storePassword = resolvedKeystorePassword!!
-                keyAlias = resolvedKeyAlias!!
-                keyPassword = resolvedKeyPassword!!
+                storeFile = file(resolvedKeystoreFile as String)
+                storePassword = resolvedKeystorePassword as String
+                keyAlias = resolvedKeyAlias as String
+                keyPassword = resolvedKeyPassword as String
             }
         }
     }

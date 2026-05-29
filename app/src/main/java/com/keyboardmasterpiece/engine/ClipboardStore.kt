@@ -73,8 +73,10 @@ class ClipboardStore(context: Context) {
      * can take seconds. Instead, we keep large clips in memory with TTL.
      * Cleared on low memory and on service destroy.
      */
-    private val largeClipCache = LinkedHashMap<String, Long>(MAX_LARGE_CLIPS, 0.75f, true) {
-        // access-order LRU — eldest is removed on put
+    private val largeClipCache = object : LinkedHashMap<String, Long>(MAX_LARGE_CLIPS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+            return size > MAX_LARGE_CLIPS
+        }
     }
     private val largeClipTimestamps = mutableMapOf<String, Long>()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -211,7 +213,7 @@ class ClipboardStore(context: Context) {
         if (sizeBytes > LARGE_TEXT_THRESHOLD) {
             pruneLargeClipCache()
             // Remove oldest if at capacity
-            while (largeClipCache.size >= MAX_LARGE_CLIPS) {
+            while (largeClipCache.size > MAX_LARGE_CLIPS) {
                 val oldestKey = largeClipTimestamps.entries
                     .minByOrNull { it.value }?.key
                 oldestKey?.let {

@@ -3,22 +3,15 @@ package com.keyboardmasterpiece.ime
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.ClipDescription
-import android.content.ContentProvider
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.database.Cursor
-import android.database.MatrixCursor
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.util.Log
 import android.view.KeyEvent
@@ -78,16 +71,8 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     private val composingText = StringBuilder()
     private var isComposing = false
 
-    // FIX: QUALITY-004 — CursorState data class replacing separate getCursorPosition/getSelection
-    private data class CursorState(val start: Int, val end: Int)
-
-    // FIX: HIGH-005 — Proper UndoEntry with cursor position and selection info
-    private data class UndoEntry(
-        val text: String,
-        val cursorStart: Int,
-        val selectionStart: Int,
-        val selectionEnd: Int
-    )
+    // FIX: QUALITY-004 — CursorState is in companion object below
+    // FIX: HIGH-005 — UndoEntry is in companion object below
     private val undoStack = ArrayDeque<UndoEntry>()
     private val redoStack = ArrayDeque<UndoEntry>()
 
@@ -114,13 +99,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
     private val recentEmojis = mutableListOf<String>()
     private val MAX_RECENT_EMOJIS = 20
 
-    // TASK3 — File preview info data class
-    data class FilePreviewInfo(
-        val uri: Uri,
-        val mimeType: String,
-        val fileName: String,
-        val fileSize: Long
-    )
+    // TASK3 — FilePreviewInfo is in companion object below
 
     override fun onCreate() {
         super.onCreate()
@@ -177,7 +156,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             prefs = UserPreferences.create(this)
             // Rebuild suggestion engine with the new prefs (which may have more personal words)
             currentKeyboardView = null
-        suggestions.shutdown()
+            suggestions.shutdown()
             suggestions = SuggestionEngine(prefs)
         } catch (_: Exception) {
             // If upgrade fails, keep using boot-safe prefs
@@ -985,8 +964,9 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
         // Check if the editor supports this MIME type via commitContent
         val editorInfo = currentEditorInfo
-        val supportedMimeTypes = if (editorInfo != null) {
-            InputConnectionCompat.getEditorInfoMimeTypes(editorInfo)
+        val supportedMimeTypes: Array<String> = if (editorInfo != null) {
+            // EditorInfo.contentMimeTypes is available on API 25+ (our minSdk is 26)
+            editorInfo.contentMimeTypes ?: emptyArray()
         } else {
             emptyArray()
         }
@@ -1018,7 +998,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
             val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
 
-            val committed = InputConnectionCompat.commitContent(ic, currentEditorInfo!!, inputContentInfo, flags, null)
+            val committed = InputConnectionCompat.commitContent(ic, currentEditorInfo ?: return, inputContentInfo, flags, null)
 
             if (!committed) {
                 // App didn't accept the content — try share intent fallback
@@ -1398,5 +1378,24 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     companion object {
         private const val TAG = "KeyboardImeService"
+
+        // FIX: QUALITY-004 — CursorState data class (must be in companion for proper resolution)
+        internal data class CursorState(val start: Int, val end: Int)
+
+        // FIX: HIGH-005 — UndoEntry with cursor position and selection info
+        internal data class UndoEntry(
+            val text: String,
+            val cursorStart: Int,
+            val selectionStart: Int,
+            val selectionEnd: Int
+        )
+
+        // TASK3 — File preview info data class
+        data class FilePreviewInfo(
+            val uri: Uri,
+            val mimeType: String,
+            val fileName: String,
+            val fileSize: Long
+        )
     }
 }
