@@ -1,35 +1,13 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Keyboard Masterpiece — GitHub Actions CI/CD
-# Builds Debug + Release APKs on every push and PR
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#
-# SETUP (one-time):
-#   Go to your GitHub repo -> Settings -> Secrets and variables -> Actions
-#   Add these secrets:
-#     KEYSTORE_BASE64    — base64-encoded .jks keystore file
-#                          Run: base64 -w 0 keyboard_masterpiece.jks
-#     KEYSTORE_PASSWORD  — Keystore password
-#     KEY_ALIAS          — Key alias
-#     KEY_PASSWORD       — Key password
-#
-#   If you skip the secrets, the workflow will still build a debug APK
-#   and an unsigned release APK.
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 name: Build APK
 
 on:
   push:
-    branches: [ main, develop, keyboard-android-production ]
+    branches: [main, develop, keyboard-android-production]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
-env:
-  GRADLE_OPTS: '-Xmx4g -Dorg.gradle.daemon=false'
-
 jobs:
-  # ─── Debug Build ──────────────────────────────────────────────────────
   build-debug:
     name: Debug APK
     runs-on: ubuntu-latest
@@ -74,10 +52,10 @@ jobs:
       - name: List generated APK files
         if: always()
         run: |
-          echo "=== APK files found ==="
+          echo "APK files found:"
           find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
           echo ""
-          echo "=== Debug APK details ==="
+          echo "Debug APK details:"
           ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug APK directory"
 
       - name: Upload Debug APK
@@ -89,7 +67,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  # ─── Release Build (Signed when secrets available) ───────────────────
   build-release:
     name: Release APK
     runs-on: ubuntu-latest
@@ -150,16 +127,16 @@ jobs:
       - name: Build Unsigned Release APK
         if: steps.decode_keystore.outputs.has_keystore != 'true'
         run: |
-          echo "No keystore configured — building UNSIGNED release APK..."
+          echo "No keystore configured - building UNSIGNED release APK..."
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK
         if: always()
         run: |
-          echo "=== APK files found ==="
+          echo "APK files found:"
           find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
           echo ""
-          echo "=== Release APK details ==="
+          echo "Release APK details:"
           ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "No release APK directory"
           echo ""
           RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" -type f 2>/dev/null | head -1)
