@@ -60,13 +60,15 @@ data class FilePreviewInfo(
  * Supports wildcard patterns like "image/*".
  */
 private fun mimeTypeMatches(pattern: String, mimeType: String): Boolean {
-    if (pattern == "*/*") return true
+    val wildcard = "*"
+    val slash = "/"
+    if (pattern == wildcard + slash + wildcard) return true
     if (pattern == mimeType) return true
-    val patternParts = pattern.split("/")
-    val mimeParts = mimeType.split("/")
+    val patternParts = pattern.split(slash)
+    val mimeParts = mimeType.split(slash)
     if (patternParts.size != 2 || mimeParts.size != 2) return false
-    if (patternParts[0] != mimeParts[0] && patternParts[0] != "*") return false
-    if (patternParts[1] != mimeParts[1] && patternParts[1] != "*") return false
+    if (patternParts[0] != mimeParts[0] && patternParts[0] != wildcard) return false
+    if (patternParts[1] != mimeParts[1] && patternParts[1] != wildcard) return false
     return true
 }
 
@@ -916,13 +918,13 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 // Use Android 13+ photo picker
                 Intent(android.provider.MediaStore.ACTION_PICK_IMAGES).apply {
-                    type = "image/*"
+                    type = "image/" + "*"
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
             } else {
                 // Fallback for older versions: generic image picker
                 Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
+                    type = "image/" + "*"
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addCategory(Intent.CATEGORY_OPENABLE)
                 }
@@ -939,7 +941,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             // We can't directly receive activity results from InputMethodService,
             // so we use a different approach: start the activity and let the user
             // pick the file. We'll use a content provider approach instead.
-            startFilePickerActivity("image/*")
+            startFilePickerActivity("image/" + "*")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch photo picker", e)
             showErrorFeedback("Unable to open photo picker")
@@ -951,7 +953,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
      */
     private fun launchFilePicker() {
         try {
-            startFilePickerActivity("*/*")
+            startFilePickerActivity("${'*'}/${'*'}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch file picker", e)
             showErrorFeedback("Unable to open file picker")
