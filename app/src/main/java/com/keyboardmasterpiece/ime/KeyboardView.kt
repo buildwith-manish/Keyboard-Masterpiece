@@ -109,6 +109,11 @@ class KeyboardView(context: Context) : View(context) {
     private var previewKey: KeyboardKey? = null
     private val handler = Handler(Looper.getMainLooper())
     private var repeatBackspace = false
+
+    // FIX: BUG-REPEAT -- Saved reference to the delayed backspace-repeat-start Runnable
+    // so it can be cancelled in handleUp. Previously, an anonymous Runnable was posted
+    // but never removed, causing an unstoppable backspace repeat after a quick tap.
+    private var backspaceRepeatStartRunnable: Runnable? = null
     private var needsLayout = true
     private var cachedRowHeight = 0f
     private var cachedStartX = 0f
@@ -246,11 +251,15 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     // FIX: MED-004 -- Repeat interval 50ms instead of 45ms
+    // FIX: BUG-REPEAT -- Added safety check: only repeat if a pointer is still down on backspace.
+    // This prevents orphaned repeats if the cancellation logic somehow fails.
     private val repeatRunnable = object : Runnable {
         override fun run() {
-            if (repeatBackspace) {
+            if (repeatBackspace && primaryPointerId >= 0) {
                 listener?.onKey(KeyboardKey("", code = KeyCodes.BACKSPACE))
                 handler.postDelayed(this, BACKSPACE_REPEAT_INTERVAL_MS)
+            } else {
+                repeatBackspace = false
             }
         }
     }
@@ -529,7 +538,12 @@ class KeyboardView(context: Context) : View(context) {
             state.downKey?.let { key ->
                 handler.postDelayed(longPress, 280)
                 if (key.code == KeyCodes.BACKSPACE) {
-                    handler.postDelayed({ startBackspaceRepeat() }, 480)
+                    // FIX: BUG-REPEAT -- Save the Runnable reference so we can cancel it on release.
+                    // Previously, an anonymous Runnable was posted but never cancelled,
+                    // causing the backspace repeat to start even after a quick tap-release.
+                    val r = Runnable { startBackspaceRepeat() }
+                    backspaceRepeatStartRunnable = r
+                    handler.postDelayed(r, 480)
                 }
             }
         }
@@ -603,6 +617,11 @@ class KeyboardView(context: Context) : View(context) {
 
         if (pointerId == primaryPointerId) {
             handler.removeCallbacks(longPress)
+            // FIX: BUG-REPEAT -- Cancel the delayed backspace-repeat-start Runnable.
+            // Without this, a quick tap on backspace would leave an orphaned Runnable
+            // that starts an unstoppable backspace repeat 480ms later.
+            backspaceRepeatStartRunnable?.let { handler.removeCallbacks(it) }
+            backspaceRepeatStartRunnable = null
             repeatBackspace = false
             handler.removeCallbacks(repeatRunnable)
 
@@ -652,6 +671,9 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun handleCancel() {
         handler.removeCallbacks(longPress)
+        // FIX: BUG-REPEAT -- Cancel the delayed backspace-repeat-start Runnable on cancel too.
+        backspaceRepeatStartRunnable?.let { handler.removeCallbacks(it) }
+        backspaceRepeatStartRunnable = null
         repeatBackspace = false
         handler.removeCallbacks(repeatRunnable)
         isDraggingHandle = false // Feature 5
@@ -722,6 +744,7 @@ class KeyboardView(context: Context) : View(context) {
         primaryPointerId = -1
         pressedSuggestionIndex = -1
         isDraggingHandle = false // Feature 5
+        backspaceRepeatStartRunnable = null // FIX: BUG-REPEAT -- Clear reference on detach
 
         handler.removeCallbacksAndMessages(null)
         path.reset()
