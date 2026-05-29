@@ -18,7 +18,7 @@ object KeyboardLayoutFactory {
     private val emojiSmileys = listOf(
         "😀","😁","😂","🤣","😊","😍","😘","😎","🥳","😭",
         "😃","😄","😅","😆","😉","😋","😌","🤔","😐","😑",
-        "😶","😏","😒","🙄","😬","😮","😯","😴"," sick","🤢",
+        "😶","😏","😒","🙄","😬","😮","😯","😴","🤒","🤢",
         "🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","😇","🤓"
     )
 
@@ -109,6 +109,7 @@ object KeyboardLayoutFactory {
      * Single row of compact buttons that appears above the keyboard on all panels except NUMPAD.
      */
     private fun toolbar(): List<KeyboardKey> = listOf(
+        a("😊", KeyCodes.EMOJI, .8f),
         a("📋", KeyCodes.TOOLBAR_CLIPBOARD, .8f),
         a("⚙️", KeyCodes.TOOLBAR_SETTINGS, .8f),
         a("🎨", KeyCodes.TOOLBAR_THEME, .8f),
@@ -145,16 +146,18 @@ object KeyboardLayoutFactory {
 
         // TASK3 — Photo picker and file picker buttons added to toolbar row
         // FIX: MED-005 — RTL: reverse bottom row key order
+        // FIX: Replaced LANGUAGE (🌐) with EMOJI (😊) — emoji access is more frequent;
+        //   long-press on EMOJI key shows input method picker instead
         val bottomRow = if (isRtl) {
             listOf(
                 a("⏎", KeyCodes.ENTER, sideKeyWeight), a("📷", KeyCodes.PHOTO_PICKER, .9f),
                 a("📎", KeyCodes.FILE_PICKER, .9f),
-                a("space", KeyCodes.SPACE, spaceWeight), a("🌐", KeyCodes.LANGUAGE, .9f),
+                a("space", KeyCodes.SPACE, spaceWeight), a("😊", KeyCodes.EMOJI, .9f),
                 a("?123", KeyCodes.SYMBOLS, sideKeyWeight)
             )
         } else {
             listOf(
-                a("?123", KeyCodes.SYMBOLS, sideKeyWeight), a("🌐", KeyCodes.LANGUAGE, .9f),
+                a("?123", KeyCodes.SYMBOLS, sideKeyWeight), a("😊", KeyCodes.EMOJI, .9f),
                 a("📷", KeyCodes.PHOTO_PICKER, .9f), a("📎", KeyCodes.FILE_PICKER, .9f),
                 a("space", KeyCodes.SPACE, spaceWeight), a("⏎", KeyCodes.ENTER, sideKeyWeight)
             )
@@ -180,7 +183,7 @@ object KeyboardLayoutFactory {
             listOf("@","#","$","_","&","-","+","(",")","/").map { k(it) },
             listOf("*", "\"", "'", ":", ";", "!", "?", "€", "£", "¥").map { k(it) },
             listOf(a("ABC", KeyCodes.ABC, 1.4f), k(","), k("."), k("₹"), k("%"), k("="), a("⌫", KeyCodes.BACKSPACE, 1.4f)),
-            listOf(a("123", KeyCodes.NUMPAD, 1.2f), a("✂", KeyCodes.EDIT, 1.0f), a("space", KeyCodes.SPACE, 4f), a("⏎", KeyCodes.ENTER, 1.4f))
+            listOf(a("123", KeyCodes.NUMPAD, 1.0f), a("😊", KeyCodes.EMOJI, 1.0f), a("✂", KeyCodes.EDIT, 1.0f), a("space", KeyCodes.SPACE, 3.5f), a("⏎", KeyCodes.ENTER, 1.4f))
         )
         return if (isRtl) rows.map { it.reversed() } else rows
     }

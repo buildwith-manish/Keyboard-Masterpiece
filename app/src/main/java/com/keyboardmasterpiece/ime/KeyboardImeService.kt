@@ -349,6 +349,10 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 }
             }
             key.code == KeyCodes.SPACE -> showInputMethodPicker()
+            // FIX: Long press on EMOJI key shows input method picker (keyboard switcher)
+            // This replaces the old LANGUAGE key behavior — since EMOJI replaced LANGUAGE on the bottom row,
+            // users can still switch keyboards by long-pressing the 😊 emoji button
+            key.code == KeyCodes.EMOJI -> showInputMethodPicker()
             key.alt.isNotEmpty() -> {
                 commitCurrentWord() // FIX: CRIT-002
                 commitTextWithUndo(key.alt.first().toString(), ic)
@@ -730,7 +734,9 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
         // FIX: BUG-009 — Check word boundary BEFORE appending to composingText
         // TASK2 — Symbol keys: punctuation and special characters commit directly
-        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:;@#\$%&*()-_=+[]{}|\\/<>'\"~^`" }
+        // FIX: Added currency symbols (€, £, ¥, ₹, ₩, ₱, ₫, ₿) and numpad operators (*, /)
+        //   These were previously added to composing text instead of being committed directly
+        val isWordBoundary = textToType.any { it.isWhitespace() || it in ".,!?:;@#\$%&*()-_=+[]{}|\\/<>'\"~^`€£¥₹₩₱₫₿" }
 
         if (isWordBoundary) {
             // Commit current composing word first, then commit the punctuation directly
