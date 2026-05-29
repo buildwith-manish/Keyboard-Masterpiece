@@ -6,24 +6,22 @@ import android.content.res.Configuration
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-/**
- * FIX: BUG-003 — UserPreferences now uses a private constructor with factory methods.
- *   - createBootSafe() uses device-protected storage (safe before device unlock).
- *   - create() uses regular credential-encrypted storage.
- * FIX: QUALITY-003 — All one-liner properties expanded to multi-line with named constants.
- * FIX: FINAL-002 — Personal words stored in EncryptedSharedPreferences.
- *   User vocabulary data (which reveals what they type) is now encrypted at rest.
- */
+// FIX: BUG-003 -- UserPreferences now uses a private constructor with factory methods.
+// - createBootSafe() uses device-protected storage (safe before device unlock).
+// - create() uses regular credential-encrypted storage.
+// FIX: QUALITY-003 -- All one-liner properties expanded to multi-line with named constants.
+// FIX: FINAL-002 -- Personal words stored in EncryptedSharedPreferences.
+// User vocabulary data (which reveals what they type) is now encrypted at rest.
 class UserPreferences private constructor(
     private val sp: SharedPreferences,
     private val encryptedSp: SharedPreferences
 ) {
 
     companion object {
-        /** FIX: MED-006 — Single source of truth for max personal words. */
+        // FIX: MED-006 -- Single source of truth for max personal words.
         const val MAX_PERSONAL_WORDS = 1500
 
-        // Property key constants — FIX: QUALITY-003
+        // Property key constants -- FIX: QUALITY-003
         private const val KEY_DARK_THEME = "dark"
         private const val KEY_NUMBER_ROW = "number_row"
         private const val KEY_HAPTICS = "haptics"
@@ -49,9 +47,7 @@ class UserPreferences private constructor(
         private const val DEFAULT_IS_RTL = false
         private const val DEFAULT_LAST_LAYOUT_PANEL = "QWERTY"
 
-        /**
-         * FIX: FINAL-002 — Create encrypted SharedPreferences for sensitive data.
-         */
+        // FIX: FINAL-002 -- Create encrypted SharedPreferences for sensitive data.
         private fun createEncryptedPrefs(context: Context): SharedPreferences {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -65,14 +61,12 @@ class UserPreferences private constructor(
             )
         }
 
-        /**
-         * FIX: BUG-003 — Create UserPreferences using device-protected storage.
-         * Safe to use before the device is unlocked (Direct Boot aware).
-         */
+        // FIX: BUG-003 -- Create UserPreferences using device-protected storage.
+// Safe to use before the device is unlocked (Direct Boot aware).
         fun createBootSafe(context: Context): UserPreferences {
             val protectedContext = context.createDeviceProtectedStorageContext()
             val sp = protectedContext.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-            // FIX: FINAL-002 — Encrypted prefs may not work in device-protected storage,
+            // FIX: FINAL-002 -- Encrypted prefs may not work in device-protected storage,
             // so fall back to regular prefs for boot-safe mode
             val encryptedSp = try {
                 createEncryptedPrefs(protectedContext)
@@ -82,10 +76,8 @@ class UserPreferences private constructor(
             return UserPreferences(sp, encryptedSp)
         }
 
-        /**
-         * FIX: BUG-003 — Create UserPreferences using regular credential-encrypted storage.
-         * Only safe to use after the device is unlocked.
-         */
+        // FIX: BUG-003 -- Create UserPreferences using regular credential-encrypted storage.
+// Only safe to use after the device is unlocked.
         fun create(context: Context): UserPreferences {
             val sp = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
             val encryptedSp = createEncryptedPrefs(context)
@@ -93,17 +85,15 @@ class UserPreferences private constructor(
         }
     }
 
-    // FIX: QUALITY-003 — All properties expanded to multi-line with named constants
+    // FIX: QUALITY-003 -- All properties expanded to multi-line with named constants
 
-    /** Feature 4: themeIndex — index into ThemePalette.THEMES. */
+    // Feature 4: themeIndex -- index into ThemePalette.THEMES.
     var themeIndex: Int
         get() = sp.getInt(KEY_THEME_INDEX, 0)
         set(value) = sp.edit().putInt(KEY_THEME_INDEX, value % ThemePalette.THEMES.size).apply()
 
-    /**
-     * Feature 4: darkTheme now derives from themeIndex for backward compatibility.
-     * 0 is Classic Light, everything else is "dark".
-     */
+    // Feature 4: darkTheme now derives from themeIndex for backward compatibility.
+// 0 is Classic Light, everything else is "dark".
     var darkTheme: Boolean
         get() = themeIndex != 0
         set(value) { if (value && themeIndex == 0) themeIndex = 1 else if (!value) themeIndex = 0 }
@@ -136,26 +126,26 @@ class UserPreferences private constructor(
         get() = sp.getInt(KEY_LAYOUT_MODE, DEFAULT_LAYOUT_MODE)
         set(value) = sp.edit().putInt(KEY_LAYOUT_MODE, value).apply()
 
-    /** FIX: MED-006 / FILE 7 — Single constant for personal word limits. */
+    // FIX: MED-006 / FILE 7 -- Single constant for personal word limits.
     var isRtl: Boolean
         get() = sp.getBoolean(KEY_IS_RTL, DEFAULT_IS_RTL)
         set(value) = sp.edit().putBoolean(KEY_IS_RTL, value).apply()
 
-    /** FIX: FILE 7 — Persist last panel across process death. */
+    // FIX: FILE 7 -- Persist last panel across process death.
     var lastLayoutPanel: String
         get() = sp.getString(KEY_LAST_LAYOUT_PANEL, DEFAULT_LAST_LAYOUT_PANEL) ?: DEFAULT_LAST_LAYOUT_PANEL
         set(value) = sp.edit().putString(KEY_LAST_LAYOUT_PANEL, value).apply()
 
-    /** FIX: FINAL-002 — Personal words stored in encrypted SharedPreferences */
+    // FIX: FINAL-002 -- Personal words stored in encrypted SharedPreferences
     fun personalWords(): MutableSet<String> =
         encryptedSp.getStringSet(KEY_PERSONAL_WORDS, emptySet())?.toMutableSet() ?: mutableSetOf()
 
-    /** FIX: MED-006 — Consistent personal word limit. FINAL-002 — Encrypted storage. */
+    // FIX: MED-006 -- Consistent personal word limit. FINAL-002 -- Encrypted storage.
     fun savePersonalWords(words: Set<String>) {
         encryptedSp.edit().putStringSet(KEY_PERSONAL_WORDS, words.take(MAX_PERSONAL_WORDS).toSet()).apply()
     }
 
-    /** Detect landscape orientation from context configuration. */
+    // Detect landscape orientation from context configuration.
     fun isLandscape(context: Context): Boolean =
         context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 }

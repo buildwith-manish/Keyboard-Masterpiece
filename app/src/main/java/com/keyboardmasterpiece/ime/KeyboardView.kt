@@ -15,21 +15,19 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/**
- * PRODUCTION-GRADE OPTIMIZED KeyboardView
- * FIX: HIGH-001 — Pre-allocated Paints, cached colors, themeDirty flag, postInvalidateOnAnimation, dirty rect invalidation
- * FIX: HIGH-004 — Multi-touch support with SparseArray
- * FIX: MED-001 — Cached dp values via MetricsCache
- * FIX: MED-002 — Consistent SUGGESTION_HEIGHT_DP constant
- * FIX: MED-003 — Visual feedback for suggestion taps
- * FIX: MED-004 — Backspace repeat interval 50ms
- * FIX: LOW-003 — Removed System.gc() from onLowMemory
- * FIX: LOW-006 — ThemeConfig data class for all color values
- * FIX: BUG-004 — Separate pre-allocated paints for key types instead of mutating shared keyPaint
- * FIX: BUG-011 — Reset state flags in onDetachedFromWindow before removing handler callbacks
- * FIX: FINAL-007 — Dedicated pre-allocated previewPopupPaint (no mutation in drawPreview)
- * FIX: FINAL-009 — Accessibility: announce key presses to TalkBack
- */
+// PRODUCTION-GRADE OPTIMIZED KeyboardView
+// FIX: HIGH-001 -- Pre-allocated Paints, cached colors, themeDirty flag, postInvalidateOnAnimation, dirty rect invalidation
+// FIX: HIGH-004 -- Multi-touch support with SparseArray
+// FIX: MED-001 -- Cached dp values via MetricsCache
+// FIX: MED-002 -- Consistent SUGGESTION_HEIGHT_DP constant
+// FIX: MED-003 -- Visual feedback for suggestion taps
+// FIX: MED-004 -- Backspace repeat interval 50ms
+// FIX: LOW-003 -- Removed System.gc() from onLowMemory
+// FIX: LOW-006 -- ThemeConfig data class for all color values
+// FIX: BUG-004 -- Separate pre-allocated paints for key types instead of mutating shared keyPaint
+// FIX: BUG-011 -- Reset state flags in onDetachedFromWindow before removing handler callbacks
+// FIX: FINAL-007 -- Dedicated pre-allocated previewPopupPaint (no mutation in drawPreview)
+// FIX: FINAL-009 -- Accessibility: announce key presses to TalkBack
 class KeyboardView(context: Context) : View(context) {
     interface Listener {
         fun onKey(key: KeyboardKey)
@@ -37,7 +35,7 @@ class KeyboardView(context: Context) : View(context) {
         fun onSwipeWord(word: String)
         fun onSpaceDrag(deltaChars: Int)
         fun onSuggestion(text: String)
-        /** TASK3 — Callback when a file is picked from the keyboard */
+        // TASK3 -- Callback when a file is picked from the keyboard
         fun onFilePicked(uri: android.net.Uri, mimeType: String)
     }
 
@@ -48,7 +46,7 @@ class KeyboardView(context: Context) : View(context) {
             if (field != value) {
                 field = value
                 needsLayout = true
-                postInvalidateOnAnimation() // FIX: HIGH-001 — Use postInvalidateOnAnimation
+                postInvalidateOnAnimation() // FIX: HIGH-001 -- Use postInvalidateOnAnimation
             }
         }
 
@@ -59,7 +57,7 @@ class KeyboardView(context: Context) : View(context) {
     private var incognito = false
     private var suggestions = listOf<String>()
 
-    // FIX: HIGH-001 — All Paints pre-allocated in init block, NEVER in onDraw
+    // FIX: HIGH-001 -- All Paints pre-allocated in init block, NEVER in onDraw
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -83,21 +81,21 @@ class KeyboardView(context: Context) : View(context) {
     private val popupPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val suggestionHighlightPaint = Paint(Paint.ANTI_ALIAS_FLAG) // FIX: MED-003
 
-    // FIX: BUG-004 — Separate pre-allocated paints for each key type.
+    // FIX: BUG-004 -- Separate pre-allocated paints for each key type.
     // Instead of mutating keyPaint.color with save/restore, use dedicated paints
     // so there is no risk of corrupting a shared paint's state across draw calls.
     private val normalKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val actionKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val spaceKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    // FIX: FINAL-007 — Dedicated pre-allocated paint for popup preview (no mutation in drawPreview)
+    // FIX: FINAL-007 -- Dedicated pre-allocated paint for popup preview (no mutation in drawPreview)
     private val previewPopupPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val path = Path()
     private val gesture = FloatArray(512)
     private var gestureCount = 0
 
-    // FIX: HIGH-004 — Multi-touch support: track per-pointer state
+    // FIX: HIGH-004 -- Multi-touch support: track per-pointer state
     private data class PointerState(
         var downKey: KeyboardKey? = null,
         var downTime: Long = 0L,
@@ -116,7 +114,7 @@ class KeyboardView(context: Context) : View(context) {
     private var cachedStartX = 0f
     private var cachedUsableWidth = 0f
 
-    // FIX: MED-003 — Pressed suggestion index for visual feedback
+    // FIX: MED-003 -- Pressed suggestion index for visual feedback
     private var pressedSuggestionIndex = -1
 
     // Feature 5: Drag handle for keyboard resize
@@ -128,7 +126,7 @@ class KeyboardView(context: Context) : View(context) {
 
     companion object {
         private const val SUGGESTION_HEIGHT_DP = 38
-        private const val BACKSPACE_REPEAT_INTERVAL_MS = 50L // FIX: MED-004 — was 45ms, now 50ms
+        private const val BACKSPACE_REPEAT_INTERVAL_MS = 50L // FIX: MED-004 -- was 45ms, now 50ms
         // Feature 5: Drag handle constraints
         private const val DRAG_HANDLE_WIDTH_DP = 80
         private const val DRAG_HANDLE_HEIGHT_DP = 8
@@ -137,11 +135,11 @@ class KeyboardView(context: Context) : View(context) {
         private const val DRAG_SENSITIVITY = 1.5f // pixels to delta scaling
     }
 
-    // FIX: HIGH-001 — themeDirty flag; only update paint colors when theme changes
+    // FIX: HIGH-001 -- themeDirty flag; only update paint colors when theme changes
     private var themeDirty = true
     private var lastThemeIndex = -1 // Feature 4: Track theme index instead of boolean
 
-    // FIX: LOW-006 — ThemeConfig data class with all color values
+    // FIX: LOW-006 -- ThemeConfig data class with all color values
     data class ThemeConfig(
         val bgColor: Int,
         val keyColor: Int,
@@ -155,7 +153,7 @@ class KeyboardView(context: Context) : View(context) {
         val suggestionHighlightColor: Int
     )
 
-    /** Feature 4: Apply a ThemePalette.Theme to the internal ThemeConfig. */
+    // Feature 4: Apply a ThemePalette.Theme to the internal ThemeConfig.
     fun applyTheme(theme: ThemePalette.Theme) {
         currentTheme = ThemeConfig(
             bgColor = theme.bgColor,
@@ -190,7 +188,7 @@ class KeyboardView(context: Context) : View(context) {
             }
         }
 
-    // FIX: MED-001 — MetricsCache: cache all dp values in onSizeChanged
+    // FIX: MED-001 -- MetricsCache: cache all dp values in onSizeChanged
     private inner class MetricsCache {
         var gap: Float = 0f
         var suggestionHeight: Float = 0f
@@ -247,7 +245,7 @@ class KeyboardView(context: Context) : View(context) {
         postInvalidateOnAnimation() // FIX: HIGH-001
     }
 
-    // FIX: MED-004 — Repeat interval 50ms instead of 45ms
+    // FIX: MED-004 -- Repeat interval 50ms instead of 45ms
     private val repeatRunnable = object : Runnable {
         override fun run() {
             if (repeatBackspace) {
@@ -261,7 +259,7 @@ class KeyboardView(context: Context) : View(context) {
         isHapticFeedbackEnabled = false
         setLayerType(LAYER_TYPE_HARDWARE, null)
         setBackgroundColor(Color.TRANSPARENT)
-        // FIX: FINAL-009 — Accessibility: announce key presses to TalkBack
+        // FIX: FINAL-009 -- Accessibility: announce key presses to TalkBack
         accessibilityDelegate = object : AccessibilityDelegate() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(host, info)
@@ -293,7 +291,7 @@ class KeyboardView(context: Context) : View(context) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         needsLayout = true
-        metrics.recalculate() // FIX: MED-001 — Cache dp values on size change
+        metrics.recalculate() // FIX: MED-001 -- Cache dp values on size change
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -332,7 +330,7 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun performLayout() {
         val gap = metrics.gap
-        val top = metrics.suggestionHeight // FIX: MED-002 — Use consistent SUGGESTION_HEIGHT_DP
+        val top = metrics.suggestionHeight // FIX: MED-002 -- Use consistent SUGGESTION_HEIGHT_DP
         val availableHeight = height - top
         cachedRowHeight = (availableHeight / max(1, rows.size)).toFloat()
         cachedUsableWidth = when (layoutMode) {
@@ -364,7 +362,7 @@ class KeyboardView(context: Context) : View(context) {
                 if (layoutMode == LayoutMode.SPLIT && ri < rows.lastIndex && row.size > 6 && idx == row.size / 2) {
                     x += width * 0.12f
                 }
-                @Suppress("DEPRECATION") // FIX: INFO-003 — Still using rect for backward compat
+                @Suppress("DEPRECATION") // FIX: INFO-003 -- Still using rect for backward compat
                 key.rect.set(x, y, x + kw, y + keyH)
                 x += kw + gap
             }
@@ -372,12 +370,10 @@ class KeyboardView(context: Context) : View(context) {
         needsLayout = false
     }
 
-    /**
-     * FIX: HIGH-001 — updatePaints reads from ThemeConfig, only called when themeDirty.
-     * FIX: LOW-006 — All colors come from ThemeConfig, no hardcoded colors.
-     * FIX: BUG-004 — Also update the separate key-type paints.
-     * FIX: FINAL-007 — Also update dedicated previewPopupPaint from theme.
-     */
+    // FIX: HIGH-001 -- updatePaints reads from ThemeConfig, only called when themeDirty.
+// FIX: LOW-006 -- All colors come from ThemeConfig, no hardcoded colors.
+// FIX: BUG-004 -- Also update the separate key-type paints.
+// FIX: FINAL-007 -- Also update dedicated previewPopupPaint from theme.
     private fun updatePaints() {
         val theme = currentTheme
         bgPaint.color = theme.bgColor
@@ -388,21 +384,19 @@ class KeyboardView(context: Context) : View(context) {
         pathPaint.color = theme.pathColor
         suggestionHighlightPaint.color = theme.suggestionHighlightColor
 
-        // FIX: BUG-004 — Update separate key-type paints from theme
+        // FIX: BUG-004 -- Update separate key-type paints from theme
         normalKeyPaint.color = theme.keyColor
         actionKeyPaint.color = theme.actionKeyColor
         spaceKeyPaint.color = theme.spaceKeyColor
 
-        // FIX: FINAL-007 — Update dedicated preview paint from theme
+        // FIX: FINAL-007 -- Update dedicated preview paint from theme
         previewPopupPaint.color = theme.popupColor
     }
 
-    /**
-     * FIX: MED-002 — Use SUGGESTION_HEIGHT_DP consistently.
-     * FIX: MED-003 — Draw highlight for pressed suggestion.
-     * FIX: MED-001 — Use cached metrics instead of calling dp() in onDraw.
-     * FIX: HIGH-001 — No paint color reassignment in draw methods.
-     */
+    // FIX: MED-002 -- Use SUGGESTION_HEIGHT_DP consistently.
+// FIX: MED-003 -- Draw highlight for pressed suggestion.
+// FIX: MED-001 -- Use cached metrics instead of calling dp() in onDraw.
+// FIX: HIGH-001 -- No paint color reassignment in draw methods.
     private fun drawSuggestions(c: Canvas) {
         val h = metrics.suggestionHeight
         val segmentWidth = width / 3f
@@ -410,7 +404,7 @@ class KeyboardView(context: Context) : View(context) {
         textPaint.typeface = Typeface.DEFAULT_BOLD
 
         for (i in 0 until 3) {
-            // FIX: MED-003 — Draw highlight for pressed suggestion
+            // FIX: MED-003 -- Draw highlight for pressed suggestion
             if (i == pressedSuggestionIndex) {
                 c.drawRect(segmentWidth * i, 0f, segmentWidth * (i + 1), h, suggestionHighlightPaint)
             }
@@ -425,19 +419,17 @@ class KeyboardView(context: Context) : View(context) {
         textPaint.typeface = Typeface.DEFAULT
     }
 
-    /**
-     * FIX: BUG-004 — Use separate pre-allocated paints for each key type instead of
-     * mutating the shared keyPaint.color with save/restore. This eliminates the risk
-     * of corrupting the paint state if draw calls overlap or are interrupted.
-     * FIX: MED-001 — Use cached metrics.
-     * FIX: LOW-006 — All colors from ThemeConfig.
-     */
+    // FIX: BUG-004 -- Use separate pre-allocated paints for each key type instead of
+// mutating the shared keyPaint.color with save/restore. This eliminates the risk
+// of corrupting the paint state if draw calls overlap or are interrupted.
+// FIX: MED-001 -- Use cached metrics.
+// FIX: LOW-006 -- All colors from ThemeConfig.
     private fun drawKey(c: Canvas, key: KeyboardKey) {
         @Suppress("DEPRECATION")
         val r = key.rect
         val rad = metrics.keyRadius
 
-        // FIX: BUG-004 — Select the correct pre-allocated paint per key type
+        // FIX: BUG-004 -- Select the correct pre-allocated paint per key type
         val paint = when {
             key.isAction -> actionKeyPaint
             key.code == KeyCodes.SPACE -> spaceKeyPaint
@@ -457,11 +449,9 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    /**
-     * FIX: HIGH-001 — No paint allocation in drawPreview.
-     * FIX: MED-001 — Use cached metrics.
-     * FIX: FINAL-007 — Use dedicated previewPopupPaint instead of mutating popupPaint.
-     */
+    // FIX: HIGH-001 -- No paint allocation in drawPreview.
+// FIX: MED-001 -- Use cached metrics.
+// FIX: FINAL-007 -- Use dedicated previewPopupPaint instead of mutating popupPaint.
     private fun drawPreview(c: Canvas, key: KeyboardKey) {
         if (key.label.length > 3) return
         @Suppress("DEPRECATION")
@@ -473,7 +463,7 @@ class KeyboardView(context: Context) : View(context) {
             r.centerX() + metrics.previewWidth,
             r.top - metrics.previewBottomPad
         )
-        // FIX: FINAL-007 — Use dedicated previewPopupPaint (no save/restore mutation)
+        // FIX: FINAL-007 -- Use dedicated previewPopupPaint (no save/restore mutation)
         c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, previewPopupPaint)
         c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, borderPaint)
 
@@ -482,11 +472,9 @@ class KeyboardView(context: Context) : View(context) {
         c.drawText(key.label, pr.centerX(), baseline, textPaint)
     }
 
-    /**
-     * FIX: HIGH-004 — Multi-touch support.
-     * Track multiple pointers via SparseArray<PointerState>.
-     * Handle ACTION_POINTER_DOWN and ACTION_POINTER_UP.
-     */
+    // FIX: HIGH-004 -- Multi-touch support.
+// Track multiple pointers via SparseArray<PointerState>.
+// Handle ACTION_POINTER_DOWN and ACTION_POINTER_UP.
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> handleDown(e, 0)
@@ -505,10 +493,8 @@ class KeyboardView(context: Context) : View(context) {
         return true
     }
 
-    /**
-     * FIX: HIGH-004 — Handle pointer down for multi-touch.
-     * FIX: MED-003 — Detect suggestion area taps in handleDown.
-     */
+    // FIX: HIGH-004 -- Handle pointer down for multi-touch.
+// FIX: MED-003 -- Detect suggestion area taps in handleDown.
     private fun handleDown(e: MotionEvent, pointerIndex: Int) {
         val pointerId = e.getPointerId(pointerIndex)
         val x = e.getX(pointerIndex)
@@ -548,7 +534,7 @@ class KeyboardView(context: Context) : View(context) {
             }
         }
 
-        // FIX: MED-003 — Detect suggestion area tap
+        // FIX: MED-003 -- Detect suggestion area tap
         if (y < metrics.suggestionHeight) {
             val idx = (x / (width / 3f)).toInt().coerceIn(0, 2)
             pressedSuggestionIndex = idx
@@ -597,12 +583,10 @@ class KeyboardView(context: Context) : View(context) {
         postInvalidateOnAnimation() // FIX: HIGH-001
     }
 
-    /**
-     * FIX: HIGH-004 — Handle pointer up for multi-touch.
-     * FIX: MED-002 — Use SUGGESTION_HEIGHT_DP consistently.
-     * FIX: MED-003 — Clear pressed suggestion highlight on up.
-     * FIX: FINAL-009 — Announce key press for TalkBack accessibility.
-     */
+    // FIX: HIGH-004 -- Handle pointer up for multi-touch.
+// FIX: MED-002 -- Use SUGGESTION_HEIGHT_DP consistently.
+// FIX: MED-003 -- Clear pressed suggestion highlight on up.
+// FIX: FINAL-009 -- Announce key press for TalkBack accessibility.
     private fun handleUp(e: MotionEvent, pointerIndex: Int) {
         // Feature 5: End drag handle resize
         if (isDraggingHandle) {
@@ -630,14 +614,14 @@ class KeyboardView(context: Context) : View(context) {
                     val word = NativeGestureBridge.classify(gesture, gestureCount)
                     listener?.onSwipeWord(word)
                 }
-                y < metrics.suggestionHeight -> { // FIX: MED-002 — Use consistent SUGGESTION_HEIGHT_DP
+                y < metrics.suggestionHeight -> { // FIX: MED-002 -- Use consistent SUGGESTION_HEIGHT_DP
                     val idx = (x / (width / 3f)).toInt().coerceIn(0, 2)
                     listener?.onSuggestion(suggestions.getOrNull(idx).orEmpty())
                 }
                 finalKey != null -> listener?.onKey(finalKey)
             }
 
-            // FIX: FINAL-009 — Announce key press for TalkBack accessibility
+            // FIX: FINAL-009 -- Announce key press for TalkBack accessibility
             finalKey?.let { key ->
                 if (key.label.isNotBlank()) {
                     announceForAccessibility(key.label)
@@ -660,7 +644,7 @@ class KeyboardView(context: Context) : View(context) {
 
         pointerStates.remove(pointerId)
 
-        // FIX: MED-003 — Clear suggestion highlight
+        // FIX: MED-003 -- Clear suggestion highlight
         pressedSuggestionIndex = -1
 
         postInvalidateOnAnimation() // FIX: HIGH-001
@@ -679,9 +663,7 @@ class KeyboardView(context: Context) : View(context) {
         postInvalidateOnAnimation()
     }
 
-    /**
-     * FIX: HIGH-001 — Single-key invalidation method for dirty rect invalidation.
-     */
+    // FIX: HIGH-001 -- Single-key invalidation method for dirty rect invalidation.
     fun invalidateKey(key: KeyboardKey) {
         @Suppress("DEPRECATION")
         val r = key.rect
@@ -726,18 +708,16 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 
-    /** FIX: MED-001 — Float version of dp for metrics cache. */
+    // FIX: MED-001 -- Float version of dp for metrics cache.
     private fun dpF(v: Int): Float = v * resources.displayMetrics.density
 
-    /**
-     * FIX: BUG-011 — Reset state flags BEFORE removing handler callbacks.
-     * If we remove callbacks first, pending runnables that reference these flags
-     * could still be mid-execution or the state could be inconsistent. Resetting
-     * the flags first ensures a clean state when the view detaches.
-     */
+    // FIX: BUG-011 -- Reset state flags BEFORE removing handler callbacks.
+// If we remove callbacks first, pending runnables that reference these flags
+// could still be mid-execution or the state could be inconsistent. Resetting
+// the flags first ensures a clean state when the view detaches.
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        // FIX: BUG-011 — Reset state flags before removing handler callbacks
+        // FIX: BUG-011 -- Reset state flags before removing handler callbacks
         repeatBackspace = false
         primaryPointerId = -1
         pressedSuggestionIndex = -1
@@ -749,19 +729,15 @@ class KeyboardView(context: Context) : View(context) {
         pointerStates.clear()
     }
 
-    /**
-     * FIX: LOW-003 — Removed System.gc() call. Just clear the suggestions list.
-     * Calling System.gc() is discouraged; the VM manages memory and explicit GC
-     * requests can cause jank and unpredictable pauses.
-     */
+    // FIX: LOW-003 -- Removed System.gc() call. Just clear the suggestions list.
+// Calling System.gc() is discouraged; the VM manages memory and explicit GC
+// requests can cause jank and unpredictable pauses.
     fun onLowMemory() {
         suggestions = emptyList()
     }
 
-    /**
-     * Feature 5: Draw the drag handle bar at the top of the keyboard.
-     * Draws a small centered rounded rectangle that users can drag to resize the keyboard.
-     */
+    // Feature 5: Draw the drag handle bar at the top of the keyboard.
+// Draws a small centered rounded rectangle that users can drag to resize the keyboard.
     private fun drawDragHandle(c: Canvas) {
         val theme = currentTheme
         dragHandlePaint.color = theme.borderColor

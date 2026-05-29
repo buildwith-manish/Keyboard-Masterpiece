@@ -8,17 +8,14 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 
-/**
- * TASK3 — Transparent activity for file picking from the keyboard.
- *
- * InputMethodService cannot use ActivityResultLauncher directly,
- * so this activity acts as a bridge:
- * 1. Launched by KeyboardImeService with a MIME type
- * 2. Opens the system file/photo picker
- * 3. Receives the picked file URI
- * 4. Sends the file via InputConnectionCompat.commitContent()
- * 5. Finishes immediately (transparent to the user)
- */
+// TASK3 -- Transparent activity for file picking from the keyboard.
+// InputMethodService cannot use ActivityResultLauncher directly,
+// so this activity acts as a bridge:
+// 1. Launched by KeyboardImeService with a MIME type
+// 2. Opens the system file/photo picker
+// 3. Receives the picked file URI
+// 4. Sends the file via InputConnectionCompat.commitContent()
+// 5. Finishes immediately (transparent to the user)
 class FilePickerActivity : Activity() {
 
     companion object {
@@ -31,7 +28,7 @@ class FilePickerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val mimeType = intent.getStringExtra(EXTRA_MIME_TYPE) ?: "*/*"
+        val mimeType = intent.getStringExtra(EXTRA_MIME_TYPE) ?: "*" + "/" + "*"
 
         if (mimeType.startsWith("image/")) {
             launchPhotoPicker()
@@ -40,22 +37,20 @@ class FilePickerActivity : Activity() {
         }
     }
 
-    /**
-     * TASK3 — Launch photo picker.
-     * Uses the Android 13+ photo picker or falls back to GET_CONTENT.
-     */
+    // TASK3 -- Launch photo picker.
+// Uses the Android 13+ photo picker or falls back to GET_CONTENT.
     private fun launchPhotoPicker() {
         try {
             val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 // Use Android 13+ photo picker
                 Intent(android.provider.MediaStore.ACTION_PICK_IMAGES).apply {
-                    type = "image/*"
+                    type = "image/" + "*"
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
             } else {
                 // Fallback for older versions
                 Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
+                    type = "image/" + "*"
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addCategory(Intent.CATEGORY_OPENABLE)
                 }
@@ -68,9 +63,7 @@ class FilePickerActivity : Activity() {
         }
     }
 
-    /**
-     * TASK3 — Launch file picker for PDF, docs, audio, video, etc.
-     */
+    // TASK3 -- Launch file picker for PDF, docs, audio, video, etc.
     private fun launchFilePicker(mimeType: String) {
         try {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -88,15 +81,13 @@ class FilePickerActivity : Activity() {
         }
     }
 
-    /**
-     * TASK3 — Supported MIME types for file picking.
-     */
+    // TASK3 -- Supported MIME types for file picking.
     private fun getSupportedMimeTypes(): Array<String> {
         return arrayOf(
-            "image/*",
+            "image/" + "*",
             "application/pdf",
-            "audio/*",
-            "video/*",
+            "audio/" + "*",
+            "video/" + "*",
             "text/plain",
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -105,9 +96,7 @@ class FilePickerActivity : Activity() {
         )
     }
 
-    /**
-     * TASK3 — Determine the MIME type of the selected file from its URI.
-     */
+    // TASK3 -- Determine the MIME type of the selected file from its URI.
     private fun resolveMimeType(uri: Uri): String {
         // Try content resolver first
         val cr = contentResolver
@@ -173,9 +162,7 @@ class FilePickerActivity : Activity() {
         finish()
     }
 
-    /**
-     * TASK3 — Get reference to the KeyboardImeService.
-     */
+    // TASK3 -- Get reference to the KeyboardImeService.
     private fun getInputMethodService(): KeyboardImeService? {
         // The service is accessible through the system input method manager
         // But since we can't directly access the service instance,
@@ -183,9 +170,7 @@ class FilePickerActivity : Activity() {
         return KeyboardImeServiceHolder.instance
     }
 
-    /**
-     * TASK3 — Fallback: share the file via a share intent.
-     */
+    // TASK3 -- Fallback: share the file via a share intent.
     private fun fallbackShare(uri: Uri, mimeType: String) {
         try {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -205,11 +190,9 @@ class FilePickerActivity : Activity() {
     }
 }
 
-/**
- * TASK3 — Static holder for the IME service instance.
- * This allows FilePickerActivity to communicate with the active IME service.
- * The reference is set in onCreate and cleared in onDestroy of the service.
- */
+// TASK3 -- Static holder for the IME service instance.
+// This allows FilePickerActivity to communicate with the active IME service.
+// The reference is set in onCreate and cleared in onDestroy of the service.
 object KeyboardImeServiceHolder {
     var instance: KeyboardImeService? = null
 }

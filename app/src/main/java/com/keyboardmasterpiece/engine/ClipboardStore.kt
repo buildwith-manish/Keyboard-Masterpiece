@@ -13,22 +13,20 @@ import androidx.security.crypto.MasterKey
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
-/**
- * FIX: HIGH-006 — TTL-based expiration (1 hour) for clipboard entries.
- * FIX: LOW-005 — Clipboard history expiration (covered by TTL).
- * FIX: BUG-002 — pasteText() now uses applicationContext instead of null for coerceToText().
- * FIX: FINAL-001 — Replaced Base64 obfuscation with EncryptedSharedPreferences.
- *   Clipboard data is now encrypted at rest using AES256_SIV (key) + AES256_GCM (value).
- *   No more trivially-reversible Base64 encoding of sensitive user data.
- * TASK1 — Enhanced clipboard manager that handles text up to 10MB safely.
- *   Large text is never stored in EncryptedSharedPreferences (too slow for >100KB).
- *   Instead, large clips are kept in an in-memory LRU cache with TTL expiration.
- *   Chunked paste support: commitTextInChunks() splits text into 500-char chunks.
- */
+// FIX: HIGH-006 -- TTL-based expiration (1 hour) for clipboard entries.
+// FIX: LOW-005 -- Clipboard history expiration (covered by TTL).
+// FIX: BUG-002 -- pasteText() now uses applicationContext instead of null for coerceToText().
+// FIX: FINAL-001 -- Replaced Base64 obfuscation with EncryptedSharedPreferences.
+// Clipboard data is now encrypted at rest using AES256_SIV (key) + AES256_GCM (value).
+// No more trivially-reversible Base64 encoding of sensitive user data.
+// TASK1 -- Enhanced clipboard manager that handles text up to 10MB safely.
+// Large text is never stored in EncryptedSharedPreferences (too slow for >100KB).
+// Instead, large clips are kept in an in-memory LRU cache with TTL expiration.
+// Chunked paste support: commitTextInChunks() splits text into 500-char chunks.
 class ClipboardStore(context: Context) {
     private val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
-    /** FIX: FINAL-001 — Use EncryptedSharedPreferences for clipboard data at rest */
+    // FIX: FINAL-001 -- Use EncryptedSharedPreferences for clipboard data at rest
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
@@ -41,10 +39,10 @@ class ClipboardStore(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    /** FIX: BUG-002 — Use applicationContext to avoid null context in coerceToText() */
+    // FIX: BUG-002 -- Use applicationContext to avoid null context in coerceToText()
     private val appContext = context.applicationContext
 
-    /** TTL for clipboard entries: 1 hour in milliseconds */
+    // TTL for clipboard entries: 1 hour in milliseconds
     companion object {
         private const val TAG = "ClipboardStore"
         private const val TTL_MS = 60L * 60L * 1000L // 1 hour
@@ -54,25 +52,23 @@ class ClipboardStore(context: Context) {
         private const val SEPARATOR = "\u001E"
         private const val MAX_ENTRIES = 20
 
-        /** TASK1 — Maximum clipboard text size: 10MB */
+        // TASK1 -- Maximum clipboard text size: 10MB
         const val MAX_CLIP_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
 
-        /** TASK1 — Chunk size for commitText: 500 characters per commit */
+        // TASK1 -- Chunk size for commitText: 500 characters per commit
         const val CHUNK_SIZE = 500
 
-        /** TASK1 — Threshold: text above this size is stored in-memory only, not encrypted prefs */
+        // TASK1 -- Threshold: text above this size is stored in-memory only, not encrypted prefs
         private const val LARGE_TEXT_THRESHOLD = 100 * 1024 // 100KB
 
-        /** TASK1 — Maximum in-memory large clips */
+        // TASK1 -- Maximum in-memory large clips
         private const val MAX_LARGE_CLIPS = 3
     }
 
-    /**
-     * TASK1 — In-memory LRU cache for large clipboard text (>100KB).
-     * EncryptedSharedPreferences is too slow for large text — writing 100KB+
-     * can take seconds. Instead, we keep large clips in memory with TTL.
-     * Cleared on low memory and on service destroy.
-     */
+    // TASK1 -- In-memory LRU cache for large clipboard text (>100KB).
+// EncryptedSharedPreferences is too slow for large text -- writing 100KB+
+// can take seconds. Instead, we keep large clips in memory with TTL.
+// Cleared on low memory and on service destroy.
     private val largeClipCache = object : LinkedHashMap<String, Long>(MAX_LARGE_CLIPS, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
             return size > MAX_LARGE_CLIPS
@@ -84,7 +80,7 @@ class ClipboardStore(context: Context) {
     fun copy(text: String) {
         if (text.isBlank()) return
 
-        // TASK1 — Enforce 10MB limit
+        // TASK1 -- Enforce 10MB limit
         val sizeBytes = text.toByteArray(Charsets.UTF_8).size
         if (sizeBytes > MAX_CLIP_SIZE_BYTES) {
             Log.w(TAG, "Clipboard text exceeds 10MB limit (${sizeBytes} bytes), truncating")
@@ -98,9 +94,7 @@ class ClipboardStore(context: Context) {
         }
     }
 
-    /**
-     * TASK1 — Truncate text to fit within a byte limit without breaking multibyte chars.
-     */
+    // TASK1 -- Truncate text to fit within a byte limit without breaking multibyte chars.
     private fun truncateToByteLimit(text: String, maxBytes: Int): String {
         var end = text.length
         while (end > 0) {
@@ -113,9 +107,7 @@ class ClipboardStore(context: Context) {
         return ""
     }
 
-    /**
-     * TASK1 — Check if a large clip has expired.
-     */
+    // TASK1 -- Check if a large clip has expired.
     private fun pruneLargeClipCache() {
         val now = System.currentTimeMillis()
         val expiredKeys = largeClipTimestamps.entries
@@ -127,10 +119,8 @@ class ClipboardStore(context: Context) {
         }
     }
 
-    /**
-     * TASK1 — Get clipboard text safely, handling large text up to 10MB.
-     * Reads from system clipboard, but also checks in-memory cache for large items.
-     */
+    // TASK1 -- Get clipboard text safely, handling large text up to 10MB.
+// Reads from system clipboard, but also checks in-memory cache for large items.
     fun pasteText(): String {
         pruneLargeClipCache()
 
@@ -152,17 +142,13 @@ class ClipboardStore(context: Context) {
         return clipText
     }
 
-    /**
-     * TASK1 — Get the size of current clipboard text in bytes.
-     */
+    // TASK1 -- Get the size of current clipboard text in bytes.
     fun clipboardTextSize(): Int {
         return pasteText().toByteArray(Charsets.UTF_8).size
     }
 
-    /**
-     * TASK1 — Read an InputStream fully, up to MAX_CLIP_SIZE_BYTES.
-     * Used for reading URI content safely.
-     */
+    // TASK1 -- Read an InputStream fully, up to MAX_CLIP_SIZE_BYTES.
+// Used for reading URI content safely.
     fun readStreamSafely(inputStream: InputStream?): String? {
         if (inputStream == null) return null
         return try {
@@ -189,27 +175,23 @@ class ClipboardStore(context: Context) {
         }
     }
 
-    /**
-     * TASK1 — Clear in-memory large clip cache.
-     * Called on low memory and on service destroy.
-     */
+    // TASK1 -- Clear in-memory large clip cache.
+// Called on low memory and on service destroy.
     fun clearLargeClipCache() {
         largeClipCache.clear()
         largeClipTimestamps.clear()
     }
 
-    /**
-     * FIX: HIGH-006 — Store text with encryption and track timestamps.
-     * FIX: LOW-005 — Entries older than TTL are pruned on access.
-     * FIX: FINAL-001 — No more Base64; EncryptedSharedPreferences handles encryption.
-     * TASK1 — Large text (>100KB) is stored in-memory only to avoid ANR.
-     */
+    // FIX: HIGH-006 -- Store text with encryption and track timestamps.
+// FIX: LOW-005 -- Entries older than TTL are pruned on access.
+// FIX: FINAL-001 -- No more Base64; EncryptedSharedPreferences handles encryption.
+// TASK1 -- Large text (>100KB) is stored in-memory only to avoid ANR.
     fun remember(text: String) {
         if (text.isBlank()) return
 
         val sizeBytes = text.toByteArray(Charsets.UTF_8).size
 
-        // TASK1 — For large text, store in-memory only
+        // TASK1 -- For large text, store in-memory only
         if (sizeBytes > LARGE_TEXT_THRESHOLD) {
             pruneLargeClipCache()
             // Remove oldest if at capacity
@@ -252,17 +234,13 @@ class ClipboardStore(context: Context) {
             .apply()
     }
 
-    /**
-     * TASK1 — Store a marker for large clips so we know they exist.
-     */
+    // TASK1 -- Store a marker for large clips so we know they exist.
     private fun rememberMarker(key: String) {
         pruneExpired()
         // Don't store the actual large text, just a reference
     }
 
-    /**
-     * TASK1 — Get the full text of a large clip by key.
-     */
+    // TASK1 -- Get the full text of a large clip by key.
     fun getLargeClipText(): String? {
         pruneLargeClipCache()
         if (largeClipCache.isEmpty()) return null
@@ -281,36 +259,36 @@ class ClipboardStore(context: Context) {
     // Pin support for clipboard entries
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** Pin a clipboard entry by index */
+    // Pin a clipboard entry by index
     fun pin(index: Int) {
         val current = decodePinnedIndices().toMutableSet()
         current.add(index)
         encodePinnedIndices(current)
     }
 
-    /** Unpin a clipboard entry by index */
+    // Unpin a clipboard entry by index
     fun unpin(index: Int) {
         val current = decodePinnedIndices().toMutableSet()
         current.remove(index)
         encodePinnedIndices(current)
     }
 
-    /** Check if a clipboard entry is pinned */
+    // Check if a clipboard entry is pinned
     fun isPinned(index: Int): Boolean {
         return index in decodePinnedIndices()
     }
 
-    /** Get all pinned indices */
+    // Get all pinned indices
     fun pinnedIndices(): Set<Int> {
         return decodePinnedIndices()
     }
 
-    /** Toggle pin state for a clipboard entry */
+    // Toggle pin state for a clipboard entry
     fun togglePin(index: Int) {
         if (isPinned(index)) unpin(index) else pin(index)
     }
 
-    /** Delete a clipboard entry by index */
+    // Delete a clipboard entry by index
     fun deleteAt(index: Int) {
         val items = decodeItems().toMutableList()
         val timestamps = decodeTimestamps().toMutableList()
@@ -319,7 +297,7 @@ class ClipboardStore(context: Context) {
         items.removeAt(index)
         if (index < timestamps.size) timestamps.removeAt(index)
 
-        // Update pinned indices — shift indices down for items after deleted one
+        // Update pinned indices -- shift indices down for items after deleted one
         val pinned = decodePinnedIndices().toMutableSet()
         val newPinned = mutableSetOf<Int>()
         for (p in pinned) {
@@ -377,7 +355,7 @@ class ClipboardStore(context: Context) {
         }
     }
 
-    /** FIX: FINAL-001 — Read items directly from encrypted storage (no Base64 decode) */
+    // FIX: FINAL-001 -- Read items directly from encrypted storage (no Base64 decode)
     private fun decodeItems(): List<String> {
         val raw = sp.getString(KEY_ITEMS, "") ?: ""
         if (raw.isBlank()) return emptyList()

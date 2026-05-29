@@ -1,30 +1,23 @@
 package com.keyboardmasterpiece.nativebridge
 
-/**
- * Bridge between Kotlin and the native C++ gesture classifier.
- * Falls back to a density-independent Kotlin classifier when the native
- * library is unavailable.
- *
- * FIX: BUG-006 — Replaced hardcoded pixel thresholds with density-independent
- * thresholds (80dp) and added more gesture patterns (curve direction detection).
- */
+// Bridge between Kotlin and the native C++ gesture classifier.
+// Falls back to a density-independent Kotlin classifier when the native
+// library is unavailable.
+// FIX: BUG-006 -- Replaced hardcoded pixel thresholds with density-independent
+// thresholds (80dp) and added more gesture patterns (curve direction detection).
 object NativeGestureBridge {
     private var available = false
     init { available = try { System.loadLibrary("gesture_engine"); true } catch (_: Throwable) { false } }
     external fun nativeClassify(points: FloatArray, count: Int): String
 
-    /**
-     * Classify a gesture path. Uses native classifier if available,
-     * otherwise falls back to a density-independent heuristic classifier.
-     */
+    // Classify a gesture path. Uses native classifier if available,
+// otherwise falls back to a density-independent heuristic classifier.
     fun classify(points: FloatArray, count: Int): String =
         if (available && count >= 2) runCatching { nativeClassify(points, count) }.getOrDefault("") else fallback(points, count)
 
-    /**
-     * FIX: BUG-006 — Density-independent fallback gesture classifier.
-     * Uses display density to scale thresholds so gesture detection
-     * works consistently across different screen densities.
-     */
+    // FIX: BUG-006 -- Density-independent fallback gesture classifier.
+// Uses display density to scale thresholds so gesture detection
+// works consistently across different screen densities.
     private fun fallback(p: FloatArray, count: Int): String {
         if (count < 4) return ""
 

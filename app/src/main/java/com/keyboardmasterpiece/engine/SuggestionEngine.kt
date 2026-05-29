@@ -8,27 +8,25 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 
-/**
- * FIX: HIGH-002 — Single Handler + HandlerThread for background execution.
- * FIX: HIGH-003 — Trie-based dictionary for prefix lookup instead of linear scan.
- * FIX: MED-006 — Consistent MAX_PERSONAL_WORDS constant from UserPreferences.
- * FIX: BUG-001 — TrieDictionary.clear() now atomically replaces root via AtomicReference.
- * FIX: BUG-010 — Debounce suggestAsync() to avoid flooding the background thread.
- * FIX: FINAL-003 — Thread-safe Trie insert with @Synchronized.
- * FIX: FINAL-006 — Use StringBuilder in collectWords to avoid O(n²) string concatenation.
- * Feature 6: Upgraded with trigram model, expanded word list (300+), word frequency tracking,
- *   context-aware suggestions (two previous words), and position-aware capitalization.
- */
+// FIX: HIGH-002 -- Single Handler + HandlerThread for background execution.
+// FIX: HIGH-003 -- Trie-based dictionary for prefix lookup instead of linear scan.
+// FIX: MED-006 -- Consistent MAX_PERSONAL_WORDS constant from UserPreferences.
+// FIX: BUG-001 -- TrieDictionary.clear() now atomically replaces root via AtomicReference.
+// FIX: BUG-010 -- Debounce suggestAsync() to avoid flooding the background thread.
+// FIX: FINAL-003 -- Thread-safe Trie insert with @Synchronized.
+// FIX: FINAL-006 -- Use StringBuilder in collectWords to avoid O(n²) string concatenation.
+// Feature 6: Upgraded with trigram model, expanded word list (300+), word frequency tracking,
+// context-aware suggestions (two previous words), and position-aware capitalization.
 class SuggestionEngine(private val prefs: UserPreferences) {
 
-    // FIX: HIGH-002 — Background thread with HandlerThread, single handler pair
+    // FIX: HIGH-002 -- Background thread with HandlerThread, single handler pair
     private val handlerThread = HandlerThread("suggestions-thread", Thread.MIN_PRIORITY).apply { start() }
     private val bgHandler = Handler(handlerThread.looper)
     private val mainHandler = Handler(android.os.Looper.getMainLooper())
 
     private val latest = AtomicReference(listOf("the", "and", "you"))
 
-    // FIX: BUG-010 — Token for debouncing suggestion requests
+    // FIX: BUG-010 -- Token for debouncing suggestion requests
     companion object {
         private val SUGGESTION_TOKEN = Any()
         private const val DEBOUNCE_DELAY_MS = 30L
@@ -95,7 +93,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         "also" to listOf("want", "need", "like", "know", "think")
     )
 
-    // Feature 6: Trigram model — 3-word sequences for better prediction
+    // Feature 6: Trigram model -- 3-word sequences for better prediction
     private val trigrams = mapOf<Pair<String, String>, List<String>>(
         // Common sentence openers
         ("i" to "am") to listOf("going", "not", "so", "doing", "happy", "sorry", "glad", "fine"),
@@ -149,7 +147,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
     // Feature 6: Track whether cursor is at sentence start for capitalization suggestions
     private var isAtSentenceStart = false
 
-    // FIX: HIGH-003 — Trie dictionary for O(k) prefix lookup
+    // FIX: HIGH-003 -- Trie dictionary for O(k) prefix lookup
     private val trie = TrieDictionary()
 
     init {
@@ -166,13 +164,11 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         }
     }
 
-    /**
-     * FIX: HIGH-002 — Use single bgHandler instead of creating new Handler each call.
-     * FIX: BUG-010 — Debounce: remove pending suggestion runs before posting a new one
-     * with a short delay to avoid flooding the background thread on rapid key presses.
-     * Post result back to main thread via mainHandler.
-     * Feature 6: Now accepts two previous words for trigram context.
-     */
+    // FIX: HIGH-002 -- Use single bgHandler instead of creating new Handler each call.
+// FIX: BUG-010 -- Debounce: remove pending suggestion runs before posting a new one
+// with a short delay to avoid flooding the background thread on rapid key presses.
+// Post result back to main thread via mainHandler.
+// Feature 6: Now accepts two previous words for trigram context.
     fun suggestAsync(prefix: String, previousWord: String?, previousWord2: String? = null, callback: (List<String>) -> Unit) {
         bgHandler.removeCallbacksAndMessages(SUGGESTION_TOKEN)
         bgHandler.postAtTime({
@@ -184,7 +180,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
 
     fun current(): List<String> = latest.get()
 
-    /** FIX: MED-006 — Use consistent MAX_PERSONAL_WORDS constant. */
+    // FIX: MED-006 -- Use consistent MAX_PERSONAL_WORDS constant.
     fun learn(word: String) {
         val clean = word.lowercase(Locale.US).filter { it.isLetter() || it == '\'' }
         if (clean.length < 2 || prefs.incognito) return
@@ -197,7 +193,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         wordFrequency[clean] = (wordFrequency[clean] ?: 0) + 1
     }
 
-    /** FIX: HIGH-002 — Proper shutdown of HandlerThread. */
+    // FIX: HIGH-002 -- Proper shutdown of HandlerThread.
     fun shutdown() {
         handlerThread.quitSafely()
     }
@@ -206,7 +202,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         latest.set(listOf("the", "and", "you"))
     }
 
-    /** Rebuild trie when personal words change externally. */
+    // Rebuild trie when personal words change externally.
     fun rebuildTrie() {
         trie.clear()
         for (word in commonWords) {
@@ -217,33 +213,31 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         }
     }
 
-    /** Feature 6: Set position context for capitalization suggestions. */
+    // Feature 6: Set position context for capitalization suggestions.
     fun setSentenceStart(atStart: Boolean) {
         isAtSentenceStart = atStart
     }
 
-    /**
-     * Feature 6: Upgraded suggest with trigram support, frequency-based ranking,
-     * and position-aware capitalization.
-     */
+    // Feature 6: Upgraded suggest with trigram support, frequency-based ranking,
+// and position-aware capitalization.
     private fun suggest(prefixRaw: String, previousWord: String?, previousWord2: String? = null): List<String> {
         val prefix = prefixRaw.lowercase(Locale.US).filter { it.isLetter() || it == '\'' }
         val out = LinkedHashSet<String>()
 
-        // Feature 6: Trigram context — use two previous words when available
+        // Feature 6: Trigram context -- use two previous words when available
         if (prefix.isEmpty() && previousWord != null && previousWord2 != null) {
             val key = Pair(previousWord2.lowercase(Locale.US), previousWord.lowercase(Locale.US))
             trigrams[key]?.let { out.addAll(it) }
         }
 
-        // Context from previous word (bigrams) — always try if trigrams didn't fill enough
+        // Context from previous word (bigrams) -- always try if trigrams didn't fill enough
         if (prefix.isEmpty() && previousWord != null && out.size < 3) {
             bigrams[previousWord.lowercase(Locale.US)]?.let { out.addAll(it) }
         }
 
-        // FIX: HIGH-003 — Use trie for prefix-based lookup instead of linear scan
+        // FIX: HIGH-003 -- Use trie for prefix-based lookup instead of linear scan
         if (prefix.isNotEmpty()) {
-            // Prefix match from Trie — much faster than linear scan
+            // Prefix match from Trie -- much faster than linear scan
             val trieResults = trie.getSuggestions(prefix, maxResults = 8)
             // Feature 6: Sort by frequency for better ranking
             val sorted = trieResults.sortedByDescending { wordFrequency[it] ?: 0 }
@@ -251,7 +245,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
                 if (word != prefix) out.add(word)
             }
 
-            // Simple fuzzy (edit distance 1) — limited candidates from trie first
+            // Simple fuzzy (edit distance 1) -- limited candidates from trie first
             val fuzzyCandidates = trie.getSuggestions(prefix.substring(0, min(prefix.length, 2)), maxResults = 50)
             fuzzyCandidates.asSequence()
                 .filter { it.length in (prefix.length - 1)..(prefix.length + 3) && distance(prefix, it) <= 1 }
@@ -273,7 +267,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             out.addAll(listOf("the", "and", "you", "to", "for"))
         }
 
-        // Feature 6: Position-aware capitalization — capitalize first suggestion at sentence start
+        // Feature 6: Position-aware capitalization -- capitalize first suggestion at sentence start
         val results = out.take(3).toMutableList()
         if (isAtSentenceStart && results.isNotEmpty()) {
             val first = results[0]
@@ -290,7 +284,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         val clean = word.lowercase(Locale.US).filter { it.isLetter() || it == '\'' }
         if (clean.length < 3) return null
 
-        // FIX: HIGH-003 — Limit edit-distance candidates from trie prefix
+        // FIX: HIGH-003 -- Limit edit-distance candidates from trie prefix
         val prefix = clean.substring(0, min(clean.length, 2))
         val candidates = trie.getSuggestions(prefix, maxResults = 80) + commonWords.take(50)
         // Feature 6: Prefer more frequent words as correction candidates
@@ -319,11 +313,9 @@ class SuggestionEngine(private val prefs: UserPreferences) {
         return dp[b.length]
     }
 
-    /**
-     * FIX: HIGH-003 — Trie data structure for efficient prefix-based word lookup.
-     * Uses SparseArray<TrieNode> for children (more efficient than HashMap on Android).
-     * FIX: BUG-001 — Root is stored in AtomicReference so clear() can atomically replace it.
-     */
+    // FIX: HIGH-003 -- Trie data structure for efficient prefix-based word lookup.
+// Uses SparseArray<TrieNode> for children (more efficient than HashMap on Android).
+// FIX: BUG-001 -- Root is stored in AtomicReference so clear() can atomically replace it.
     inner class TrieNode {
         val children = SparseArray<TrieNode>()
         var isEndOfWord = false
@@ -340,10 +332,10 @@ class SuggestionEngine(private val prefs: UserPreferences) {
     }
 
     inner class TrieDictionary {
-        // FIX: BUG-001 — Use AtomicReference for root so clear() can atomically replace it
+        // FIX: BUG-001 -- Use AtomicReference for root so clear() can atomically replace it
         private val rootRef = AtomicReference(TrieNode())
 
-        /** FIX: FINAL-003 — Thread-safe insert with @Synchronized */
+        // FIX: FINAL-003 -- Thread-safe insert with @Synchronized
         @Synchronized
         fun insert(word: String) {
             var node = rootRef.get()
@@ -353,10 +345,8 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             node.isEndOfWord = true
         }
 
-        /**
-         * Get all words with the given prefix, up to maxResults.
-         * Performs DFS from the prefix node.
-         */
+        // Get all words with the given prefix, up to maxResults.
+// Performs DFS from the prefix node.
         fun getSuggestions(prefix: String, maxResults: Int = 10): List<String> {
             var node = rootRef.get()
             for (char in prefix) {
@@ -367,7 +357,7 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             return results
         }
 
-        /** FIX: FINAL-006 — Use StringBuilder to avoid O(n²) string concatenation */
+        // FIX: FINAL-006 -- Use StringBuilder to avoid O(n²) string concatenation
         private fun collectWords(node: TrieNode, current: StringBuilder, results: MutableList<String>, maxResults: Int) {
             if (results.size >= maxResults) return
             if (node.isEndOfWord) results.add(current.toString())
@@ -380,10 +370,8 @@ class SuggestionEngine(private val prefs: UserPreferences) {
             }
         }
 
-        /**
-         * FIX: BUG-001 — clear() now atomically replaces the root node.
-         * The old trie structure will be garbage collected since no references remain.
-         */
+        // FIX: BUG-001 -- clear() now atomically replaces the root node.
+// The old trie structure will be garbage collected since no references remain.
         fun clear() {
             rootRef.set(TrieNode())
         }

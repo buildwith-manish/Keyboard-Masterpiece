@@ -2,11 +2,9 @@ package com.keyboardmasterpiece.engine
 
 import android.graphics.Color
 
-/**
- * Professional theme palette system with 10 themes.
- * Each theme defines: background, key, action key, space key, border, text, accent, path, popup, suggestion highlight colors.
- * Feature 4: Multi-Theme System — replaces the old light/dark boolean toggle with 8+ professional themes.
- */
+// Professional theme palette system with 10 themes.
+// Each theme defines: background, key, action key, space key, border, text, accent, path, popup, suggestion highlight colors.
+// Feature 4: Multi-Theme System -- replaces the old light/dark boolean toggle with 8+ professional themes.
 object ThemePalette {
     data class Theme(
         val name: String,

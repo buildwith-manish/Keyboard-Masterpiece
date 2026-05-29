@@ -18,15 +18,12 @@ import com.keyboardmasterpiece.R
 import com.keyboardmasterpiece.engine.ThemePalette
 import com.keyboardmasterpiece.engine.UserPreferences
 
-/**
- * Professional settings screen for Keyboard Masterpiece.
- *
- * Features:
- * - Theme picker with visual color swatches for all 10 themes
- * - Dark/light quick toggle
- * - All keyboard settings with clear section headers
- * - Feature list showing available keyboard capabilities
- */
+// Professional settings screen for Keyboard Masterpiece.
+// Features:
+// - Theme picker with visual color swatches for all 10 themes
+// - Dark/light quick toggle
+// - All keyboard settings with clear section headers
+// - Feature list showing available keyboard capabilities
 class SettingsActivity : AppCompatActivity() {
     private lateinit var prefs: UserPreferences
 
@@ -70,11 +67,9 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Build a horizontal row of theme color swatches.
-     * Each swatch shows the theme's primary background + accent colors.
-     * Tapping a swatch selects that theme.
-     */
+    // Build a horizontal row of theme color swatches.
+// Each swatch shows the theme's primary background + accent colors.
+// Tapping a swatch selects that theme.
     private fun buildThemePicker() {
         val container = findViewById<LinearLayout>(R.id.theme_picker_container)
         if (container == null) return

@@ -6,11 +6,9 @@ enum class Panel { QWERTY, SYMBOLS, EMOJI, CLIPBOARD, NUMPAD, EDIT }
 enum class LayoutMode { FULL, ONE_HANDED_LEFT, ONE_HANDED_RIGHT, FLOATING, SPLIT }
 enum class ThemeMode { LIGHT, DARK }
 
-/**
- * FIX: INFO-003 — Separate layout info from model to decouple view state.
- * KeyLayoutInfo holds view-managed geometry. KeyboardKey remains the logical model.
- * For backward compatibility, KeyboardKey.rect still exists but is @Deprecated.
- */
+// FIX: INFO-003 -- Separate layout info from model to decouple view state.
+// KeyLayoutInfo holds view-managed geometry. KeyboardKey remains the logical model.
+// For backward compatibility, KeyboardKey.rect still exists but is @Deprecated.
 data class KeyLayoutInfo(
     val rect: RectF = RectF()
 )
@@ -27,7 +25,7 @@ data class KeyboardKey(
 ) {
     val isAction: Boolean get() = code != 0
 
-    /** FIX: INFO-003 — External layout info, managed by the view layer. */
+    // FIX: INFO-003 -- External layout info, managed by the view layer.
     var layoutInfo: KeyLayoutInfo? = null
 }
 
@@ -58,9 +56,9 @@ object KeyCodes {
     const val DOWN = -49
     const val INCOGNITO = -50
     const val THEME = -51
-    /** TASK3 — Photo picker button in keyboard toolbar */
+    // TASK3 -- Photo picker button in keyboard toolbar
     const val PHOTO_PICKER = -52
-    /** TASK3 — File picker button (PDF, docs, etc.) in keyboard toolbar */
+    // TASK3 -- File picker button (PDF, docs, etc.) in keyboard toolbar
     const val FILE_PICKER = -53
 
     // Emoji category key codes
@@ -89,7 +87,7 @@ object KeyCodes {
     const val TOOLBAR_INCOGNITO = -85
 }
 
-/** Emoji category enum for tracking current category in the emoji panel */
+// Emoji category enum for tracking current category in the emoji panel
 enum class EmojiCategory {
     SMILEYS, GESTURES, ANIMALS, FOOD, ACTIVITIES, TRAVEL, OBJECTS, SYMBOLS, RECENT
 }
