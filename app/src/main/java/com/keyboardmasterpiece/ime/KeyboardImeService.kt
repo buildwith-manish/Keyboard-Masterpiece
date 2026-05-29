@@ -56,6 +56,21 @@ data class FilePreviewInfo(
 )
 
 /**
+ * Check if a MIME type pattern matches a specific MIME type.
+ * Supports wildcard patterns like "image/*".
+ */
+private fun mimeTypeMatches(pattern: String, mimeType: String): Boolean {
+    if (pattern == "*/*") return true
+    if (pattern == mimeType) return true
+    val patternParts = pattern.split("/")
+    val mimeParts = mimeType.split("/")
+    if (patternParts.size != 2 || mimeParts.size != 2) return false
+    if (patternParts[0] != mimeParts[0] && patternParts[0] != "*") return false
+    if (patternParts[1] != mimeParts[1] && patternParts[1] != "*") return false
+    return true
+}
+
+/**
  * PRODUCTION-GRADE InputMethodService
  *
  * FIX: CRIT-001 — Restore listener in onStartInputView, don't null it in onFinishInputView
@@ -1061,28 +1076,6 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             Log.e(TAG, "Share intent failed", e)
             showErrorFeedback("This app doesn't support receiving files directly. The file could not be sent.")
         }
-    }
-
-    /**
-     * TASK3 — Check if a MIME type pattern matches a specific MIME type.
-     * Supports wildcard patterns like "image/*".
-     */
-    private fun mimeTypeMatches(pattern: String, mimeType: String): Boolean {
-        if (pattern == "*/*") return true
-        if (pattern == mimeType) return true
-
-        val patternParts = pattern.split("/")
-        val mimeParts = mimeType.split("/")
-
-        if (patternParts.size != 2 || mimeParts.size != 2) return false
-
-        // Check type match (e.g., "image" matches "image")
-        if (patternParts[0] != mimeParts[0] && patternParts[0] != "*") return false
-
-        // Check subtype match (e.g., "*" matches "png")
-        if (patternParts[1] != mimeParts[1] && patternParts[1] != "*") return false
-
-        return true
     }
 
     /**
