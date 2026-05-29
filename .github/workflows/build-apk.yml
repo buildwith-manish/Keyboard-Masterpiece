@@ -124,13 +124,17 @@ jobs:
 
       - name: Build Signed Release APK
         if: steps.decode_keystore.outputs.has_keystore == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           echo "Building SIGNED release APK..."
           ./gradlew assembleRelease --no-daemon --stacktrace \
             -PKEYSTORE_FILE=keyboard_masterpiece.jks \
-            -PKEYSTORE_PASSWORD="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -PKEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
-            -PKEY_PASSWORD="${{ secrets.KEY_PASSWORD }}"
+            -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
+            -PKEY_ALIAS="$KEY_ALIAS" \
+            -PKEY_PASSWORD="$KEY_PASSWORD"
 
       - name: Build Unsigned Release APK
         if: steps.decode_keystore.outputs.has_keystore != 'true'
