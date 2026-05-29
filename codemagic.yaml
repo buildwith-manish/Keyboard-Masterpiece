@@ -5,14 +5,11 @@
 # SETUP INSTRUCTIONS:
 # 1. Go to https://codemagic.io/signup → Create account (free tier: 500 min/mo)
 # 2. Click "Add application" → Select your GitHub repo "Keyboard-Masterpiece"
-# 3. Go to app settings → Distribution → Android code signing
+# 3. Select "Use codemagic.yaml" as configuration method
+# 4. For SIGNED release builds: App Settings → Distribution → Android code signing
 #    - Upload the keyboard_masterpiece.jks keystore file
-#    - Enter keystore password: KM$tr0ng!K3y#2024
-#    - Enter key alias: keyboard_masterpiece
-#    - Enter key password: KM$tr0ng!K3y#2024
-# 4. Codemagic will auto-inject CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD,
-#    CM_KEY_ALIAS, CM_KEY_PASSWORD as environment variables
-# 5. Start a build! Both debug and signed release APKs will be generated.
+#    - Enter keystore password, key alias, key password
+# 5. Start a build!
 #
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -25,8 +22,6 @@ workflows:
 
     environment:
       java: 17
-      groups:
-        - keyboard_signing   # Only needed if you want debug signed too
       vars:
         GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false"
 
@@ -44,24 +39,35 @@ workflows:
 
     scripts:
       - name: Set up local properties
-        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "Android SDK: $ANDROID_SDK_ROOT"
 
       - name: Make Gradle wrapper executable
         script: chmod +x ./gradlew
 
       - name: Build Debug APK
         script: |
+          set -e
           echo "🔨 Building Debug APK..."
-          ./gradlew clean assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -50
+          ./gradlew clean assembleDebug --no-daemon --stacktrace
+
+      - name: List generated APK files
+        script: |
+          echo "📁 Scanning for APK files..."
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
+          echo ""
+          echo "📁 Full build outputs:"
+          ls -laR app/build/outputs/apk/ 2>/dev/null || echo "APK output directory not found"
 
     artifacts:
       - app/build/outputs/apk/debug/*.apk
-      - app/build/reports/**
+      - app/build/outputs/apk/**/*.apk
 
     publishing:
       email:
         recipients:
-          - user@example.com   # ← Replace with your email
+          - user@example.com
         notify:
           success: true
           failure: true
@@ -75,7 +81,7 @@ workflows:
     environment:
       java: 17
       groups:
-        - keyboard_signing   # ← Environment group with your keystore credentials
+        - keyboard_signing
       vars:
         GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false"
 
@@ -95,18 +101,18 @@ workflows:
 
     scripts:
       - name: Set up local properties
-        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "Android SDK: $ANDROID_SDK_ROOT"
 
       - name: Make Gradle wrapper executable
         script: chmod +x ./gradlew
 
       - name: Set up keystore from Codemagic environment
         script: |
-          echo "🔐 Setting up Android signing..."
+          echo "🔐 Checking Android signing configuration..."
           if [ -n "$CM_KEYSTORE_PATH" ]; then
             echo "✅ Codemagic keystore found at: $CM_KEYSTORE_PATH"
-            # The CM_KEYSTORE_PATH is already a file path provided by Codemagic
-            # Our build.gradle.kts reads CM_KEYSTORE_PATH directly
             echo "Key alias: $CM_KEY_ALIAS"
           else
             echo "⚠️  No keystore configured — building unsigned release APK"
@@ -116,47 +122,53 @@ workflows:
 
       - name: Build Release APK
         script: |
+          set -e
           echo "🔨 Building Release APK..."
-          ./gradlew clean assembleRelease --no-daemon --stacktrace --info 2>&1 | tail -50
+          ./gradlew clean assembleRelease --no-daemon --stacktrace
 
-      - name: Verify APK signing
+      - name: List generated APK files and verify signing
         script: |
-          APK_PATH="app/build/outputs/apk/release/app-release.apk"
-          if [ -f "$APK_PATH" ]; then
-            echo "📦 APK built successfully: $APK_PATH"
-            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+          echo "📁 Scanning for APK files..."
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
+          echo ""
+          echo "📁 Full build outputs:"
+          ls -laR app/build/outputs/apk/ 2>/dev/null || echo "APK output directory not found"
+
+          # Check for release APK
+          RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" -type f 2>/dev/null | head -1)
+          if [ -n "$RELEASE_APK" ]; then
+            echo ""
+            echo "📦 Release APK found: $RELEASE_APK"
+            APK_SIZE=$(du -h "$RELEASE_APK" | cut -f1)
             echo "📐 APK size: $APK_SIZE"
 
-            # Check if APK is signed
+            # Verify signing
             if command -v jarsigner &> /dev/null; then
-              VERIFY_RESULT=$(jarsigner -verify "$APK_PATH" 2>&1)
-              echo "🔏 Signing verification: $VERIFY_RESULT"
+              VERIFY_RESULT=$(jarsigner -verify "$RELEASE_APK" 2>&1)
+              echo "🔏 Signing status: $VERIFY_RESULT"
             fi
 
-            # Print build info
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Keyboard Masterpiece Build Summary"
+            echo "  Keyboard Masterpiece Release Build"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Version: 1.1.0 (Build $CM_BUILD_NUMBER)"
             echo "  Size:    $APK_SIZE"
-            echo "  Signed:  $([ -n "$CM_KEYSTORE_PATH" ] && echo 'YES ✓' || echo 'NO ✗')"
+            echo "  Signed:  $([ -n "$CM_KEYSTORE_PATH" ] && echo 'YES' || echo 'NO')"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           else
-            echo "❌ APK not found at expected path"
-            ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "Release directory missing"
-            exit 1
+            echo "❌ No release APK found!"
           fi
 
     artifacts:
       - app/build/outputs/apk/release/*.apk
-      - app/build/outputs/mapping/release/**     # ProGuard mapping for crash analysis
-      - app/build/reports/**                      # Lint & build reports
+      - app/build/outputs/apk/**/*.apk
+      - app/build/outputs/mapping/release/**
 
     publishing:
       email:
         recipients:
-          - user@example.com   # ← Replace with your email
+          - user@example.com
         notify:
           success: true
           failure: true
@@ -184,62 +196,50 @@ workflows:
 
     scripts:
       - name: Set up local properties
-        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "Android SDK: $ANDROID_SDK_ROOT"
 
       - name: Make Gradle wrapper executable
         script: chmod +x ./gradlew
 
       - name: Run Lint checks
         script: |
-          echo "🔍 Running lint..."
           ./gradlew lint --no-daemon 2>&1 | tail -20 || true
 
       - name: Build Debug APK
         script: |
+          set -e
           echo "🔨 Building Debug APK..."
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -30
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Build Release APK
         script: |
+          set -e
           echo "🔨 Building Release APK..."
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -30
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Verify builds
+      - name: List all generated APK files
         script: |
+          echo "📁 All APK files found:"
+          find . -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Build Results"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-          # Debug APK
-          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
-          if [ -f "$DEBUG_APK" ]; then
-            echo "  ✅ Debug:   $(du -h "$DEBUG_APK" | cut -f1)"
-          else
-            echo "  ❌ Debug:   NOT FOUND"
-          fi
-
-          # Release APK
-          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-          if [ -f "$RELEASE_APK" ]; then
-            SIZE=$(du -h "$RELEASE_APK" | cut -f1)
-            SIGNED=$([ -n "$CM_KEYSTORE_PATH" ] && echo "Signed ✓" || echo "Unsigned ✗")
-            echo "  ✅ Release: $SIZE ($SIGNED)"
-          else
-            echo "  ❌ Release: NOT FOUND"
-          fi
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📁 Debug APKs:"
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug APKs"
+          echo ""
+          echo "📁 Release APKs:"
+          ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "No release APKs"
 
     artifacts:
       - app/build/outputs/apk/debug/*.apk
       - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/apk/**/*.apk
       - app/build/outputs/mapping/release/**
-      - app/build/reports/**
 
     publishing:
       email:
         recipients:
-          - user@example.com   # ← Replace with your email
+          - user@example.com
         notify:
           success: true
           failure: true
