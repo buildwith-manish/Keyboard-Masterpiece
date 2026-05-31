@@ -256,6 +256,26 @@ object KeyboardLayoutFactory {
             a("All", KeyCodes.SELECT_ALL, 1f)
         ))
 
+        // Gboard-style Smart Action Row based on recent clipboard item content
+        val firstItem = clipHistory.firstOrNull()
+        if (firstItem != null) {
+            val isUrl = firstItem.startsWith("http://", ignoreCase = true) || firstItem.startsWith("https://", ignoreCase = true) || firstItem.contains(".com")
+            val isEmail = firstItem.contains("@") && firstItem.contains(".")
+            val isPhone = firstItem.matches(Regex(".*\\d{7,}.*"))
+
+            val actionRow = mutableListOf<KeyboardKey>()
+            if (isUrl) {
+                actionRow.add(KeyboardKey("🌐 Open Link", firstItem, KeyCodes.CLIP_ACTION_URL, 1.5f))
+            } else if (isEmail) {
+                actionRow.add(KeyboardKey("📧 Send Email", firstItem, KeyCodes.CLIP_ACTION_EMAIL, 1.5f))
+            } else if (isPhone) {
+                actionRow.add(KeyboardKey("📞 Call Phone", firstItem, KeyCodes.CLIP_ACTION_PHONE, 1.5f))
+            }
+            if (actionRow.isNotEmpty()) {
+                rows.add(actionRow)
+            }
+        }
+
         // Clipboard history items -- pinned first, then regular
         val pinnedItems = clipHistory.filterIndexed { index, _ -> index in pinnedIndices }
         val regularItems = clipHistory.filterIndexed { index, _ -> index !in pinnedIndices }

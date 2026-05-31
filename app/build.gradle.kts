@@ -102,4 +102,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // InputConnectionCompat.commitContent() for file sending from keyboard
     implementation("androidx.core:core:1.15.0")
+    
+    // Unit Testing
+    testImplementation("junit:junit:4.13.2")
 }

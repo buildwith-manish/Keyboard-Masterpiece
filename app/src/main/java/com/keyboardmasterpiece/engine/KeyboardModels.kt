@@ -77,6 +77,9 @@ object KeyCodes {
     const val CLIP_PIN = -71
     const val CLIP_DELETE = -72
     const val CLIP_CLEAR = -73
+    const val CLIP_ACTION_URL = -90
+    const val CLIP_ACTION_EMAIL = -91
+    const val CLIP_ACTION_PHONE = -92
 
     // Toolbar key codes
     const val TOOLBAR_CLIPBOARD = -80

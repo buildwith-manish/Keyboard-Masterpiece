@@ -11,6 +11,7 @@ import android.view.View.MeasureSpec
 import android.view.accessibility.AccessibilityNodeInfo
 import com.keyboardmasterpiece.engine.*
 import com.keyboardmasterpiece.nativebridge.NativeGestureBridge
+import com.keyboardmasterpiece.input.GestureController
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -108,6 +109,12 @@ class KeyboardView(context: Context) : View(context) {
     // Single primary pointer for gesture tracking (the first finger down)
     private var primaryPointerId = -1
     private var previewKey: KeyboardKey? = null
+    private var previewKeyStartTime = 0L
+    private val gestureController = GestureController()
+    private var lastX1 = 0f
+    private var lastY1 = 0f
+    private var lastX2 = 0f
+    private var lastY2 = 0f
     private val handler = Handler(Looper.getMainLooper())
     private var repeatBackspace = false
     private var hasDragged = false
@@ -246,6 +253,7 @@ class KeyboardView(context: Context) : View(context) {
         val state = pointerStates.get(primaryPointerId) ?: return@Runnable
         state.downKey?.let {
             previewKey = it
+            previewKeyStartTime = System.currentTimeMillis()
             listener?.onLongPress(it)
             if (it.code == KeyCodes.BACKSPACE) startBackspaceRepeat()
         }
@@ -474,6 +482,13 @@ class KeyboardView(context: Context) : View(context) {
             r.centerX() + metrics.previewWidth,
             r.top - metrics.previewBottomPad
         )
+        
+        val elapsed = System.currentTimeMillis() - previewKeyStartTime
+        val scale = (elapsed.toFloat() / 150f).coerceIn(0.8f, 1.1f)
+
+        c.save()
+        c.scale(scale, scale, pr.centerX(), pr.bottom)
+
         // FIX: FINAL-007 -- Use dedicated previewPopupPaint (no save/restore mutation)
         c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, previewPopupPaint)
         c.drawRoundRect(pr, metrics.previewRadius, metrics.previewRadius, borderPaint)
@@ -481,6 +496,12 @@ class KeyboardView(context: Context) : View(context) {
         textPaint.textSize = metrics.textPreview
         val baseline = pr.centerY() - (textPaint.ascent() + textPaint.descent()) / 2
         c.drawText(key.label, pr.centerX(), baseline, textPaint)
+
+        c.restore()
+
+        if (elapsed < 150) {
+            postInvalidateOnAnimation()
+        }
     }
 
     // FIX: HIGH-004 -- Multi-touch support.
@@ -533,6 +554,7 @@ class KeyboardView(context: Context) : View(context) {
         if (primaryPointerId == -1) {
             primaryPointerId = pointerId
             previewKey = state.downKey
+            previewKeyStartTime = System.currentTimeMillis()
             gestureCount = 0
             hasDragged = false
             path.reset()
@@ -649,7 +671,12 @@ class KeyboardView(context: Context) : View(context) {
 
             when {
                 movedDistance > metrics.swipeThreshold && panel == Panel.QWERTY && state.downKey?.code != KeyCodes.SPACE && state.downKey?.code != KeyCodes.BACKSPACE -> {
-                    val word = NativeGestureBridge.classify(gesture, gestureCount)
+                    val pointsList = mutableListOf<PointF>()
+                    for (idx in 0 until gestureCount) {
+                        pointsList.add(PointF(gesture[idx * 2], gesture[idx * 2 + 1]))
+                    }
+                    val dtwMatch = gestureController.classify(pointsList)
+                    val word = dtwMatch?.first ?: NativeGestureBridge.classify(gesture, gestureCount)
                     listener?.onSwipeWord(word)
                 }
                 y < metrics.suggestionHeight -> { // FIX: MED-002 -- Use consistent SUGGESTION_HEIGHT_DP
@@ -733,10 +760,18 @@ class KeyboardView(context: Context) : View(context) {
 
     private fun addGesturePoint(x: Float, y: Float) {
         if (gestureCount < 250) {
+            val smoothedX = if (gestureCount == 0) x else (x + lastX1 + lastX2) / 3f
+            val smoothedY = if (gestureCount == 0) y else (y + lastY1 + lastY2) / 3f
+
+            lastX2 = lastX1
+            lastY2 = lastY1
+            lastX1 = x
+            lastY1 = y
+
             val idx = gestureCount * 2
-            gesture[idx] = x
-            gesture[idx + 1] = y
-            if (gestureCount == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            gesture[idx] = smoothedX
+            gesture[idx + 1] = smoothedY
+            if (gestureCount == 0) path.moveTo(smoothedX, smoothedY) else path.lineTo(smoothedX, smoothedY)
             gestureCount++
         }
     }
