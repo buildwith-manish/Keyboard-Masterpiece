@@ -34,6 +34,7 @@ class KeyboardView(context: Context) : View(context) {
         fun onLongPress(key: KeyboardKey)
         fun onSwipeWord(word: String)
         fun onSpaceDrag(deltaChars: Int)
+        fun onBackspaceDrag(deltaWords: Int)
         fun onSuggestion(text: String)
         // TASK3 -- Callback when a file is picked from the keyboard
         fun onFilePicked(uri: android.net.Uri, mimeType: String)
@@ -109,6 +110,7 @@ class KeyboardView(context: Context) : View(context) {
     private var previewKey: KeyboardKey? = null
     private val handler = Handler(Looper.getMainLooper())
     private var repeatBackspace = false
+    private var hasDragged = false
 
     // FIX: BUG-REPEAT -- Saved reference to the delayed backspace-repeat-start Runnable
     // so it can be cancelled in handleUp. Previously, an anonymous Runnable was posted
@@ -532,6 +534,7 @@ class KeyboardView(context: Context) : View(context) {
             primaryPointerId = pointerId
             previewKey = state.downKey
             gestureCount = 0
+            hasDragged = false
             path.reset()
             addGesturePoint(x, y)
 
@@ -587,6 +590,22 @@ class KeyboardView(context: Context) : View(context) {
                 val delta = ((x - state.downX) / metrics.spaceDragUnit).toInt()
                 listener?.onSpaceDrag(delta)
                 state.downX = x
+                hasDragged = true
+            } else if (dk.code == KeyCodes.BACKSPACE && (state.downX - x) > metrics.spaceDragThreshold) {
+                // Cancel regular backspace repeating when sliding to delete
+                if (repeatBackspace || backspaceRepeatStartRunnable != null) {
+                    repeatBackspace = false
+                    handler.removeCallbacks(repeatRunnable)
+                    backspaceRepeatStartRunnable?.let { handler.removeCallbacks(it) }
+                    backspaceRepeatStartRunnable = null
+                }
+                // Gboard-style slide left on Backspace to delete words
+                val delta = ((state.downX - x) / metrics.spaceDragUnit).toInt()
+                if (delta > 0) {
+                    listener?.onBackspaceDrag(delta)
+                    state.downX = x
+                    hasDragged = true
+                }
             }
         }
 
@@ -629,7 +648,7 @@ class KeyboardView(context: Context) : View(context) {
             val movedDistance = distance(x, y, state.downX, state.downY)
 
             when {
-                movedDistance > metrics.swipeThreshold && panel == Panel.QWERTY && state.downKey?.code != KeyCodes.SPACE -> {
+                movedDistance > metrics.swipeThreshold && panel == Panel.QWERTY && state.downKey?.code != KeyCodes.SPACE && state.downKey?.code != KeyCodes.BACKSPACE -> {
                     val word = NativeGestureBridge.classify(gesture, gestureCount)
                     listener?.onSwipeWord(word)
                 }
@@ -637,7 +656,12 @@ class KeyboardView(context: Context) : View(context) {
                     val idx = (x / (width / 3f)).toInt().coerceIn(0, 2)
                     listener?.onSuggestion(suggestions.getOrNull(idx).orEmpty())
                 }
-                finalKey != null -> listener?.onKey(finalKey)
+                finalKey != null -> {
+                    val shouldTrigger = !hasDragged || (finalKey.code != KeyCodes.SPACE && finalKey.code != KeyCodes.BACKSPACE)
+                    if (shouldTrigger) {
+                        listener?.onKey(finalKey)
+                    }
+                }
             }
 
             // FIX: FINAL-009 -- Announce key press for TalkBack accessibility

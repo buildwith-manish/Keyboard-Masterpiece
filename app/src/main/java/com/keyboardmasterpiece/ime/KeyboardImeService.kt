@@ -396,6 +396,19 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    override fun onBackspaceDrag(deltaWords: Int) {
+        val ic = currentInputConnection ?: return
+        ic.beginBatchEdit()
+        try {
+            for (i in 0 until deltaWords) {
+                deleteWord(ic)
+                if (prefs.haptics) vibrateTick()
+            }
+        } finally {
+            ic.endBatchEdit()
+        }
+    }
+
     override fun onSuggestion(text: String) {
         val ic = currentInputConnection ?: return
         if (text.isBlank() || isPasswordField) return
@@ -1116,7 +1129,23 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 clipHistory = clip.history(),
                 pinnedIndices = clip.pinnedIndices()
             )
-            setKeys(keys, currentPanel, isShifted, isCapsLocked, prefs.incognito)
+            // Dynamically set Spacebar label to show current subtype (Gboard style)
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val subtype = imm.currentInputMethodSubtype
+            val spaceLabel = subtype?.let {
+                val name = it.getDisplayName(this@KeyboardImeService, packageName, applicationInfo).toString()
+                if (name.isNotBlank()) name else "space"
+            } ?: "space"
+            val updatedKeys = keys.map { row ->
+                row.map { key ->
+                    if (key.code == KeyCodes.SPACE) {
+                        key.copy(label = spaceLabel)
+                    } else {
+                        key
+                    }
+                }
+            }
+            setKeys(updatedKeys, currentPanel, isShifted, isCapsLocked, prefs.incognito)
         }
     }
 
