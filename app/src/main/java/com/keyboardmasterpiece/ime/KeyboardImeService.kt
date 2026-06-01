@@ -62,6 +62,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
     private var unlockReceiver: BroadcastReceiver? = null
     private var currentKeyboardView: KeyboardView? = null
+    private var cachedSubtypeLabel: String = "space"
 
     private var currentPanel = Panel.QWERTY
     private var isShifted = false
@@ -124,6 +125,10 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
             }
         }
+
+        // Load recent emojis & category from persisted preferences
+        recentEmojis.addAll(prefs.recentEmojis())
+        emojiCategory = try { EmojiCategory.valueOf(prefs.emojiCategory) } catch (_: Exception) { EmojiCategory.SMILEYS }
     }
 
     private fun checkDeviceUnlockedAndUpgradePrefs() {
@@ -172,6 +177,13 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         }
 
         detectInputType(info)
+        
+        // Cache InputMethodSubtype label to prevent expensive Binder IPC on every single keypress
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        val subtype = imm.currentInputMethodSubtype
+        cachedSubtypeLabel = subtype?.getDisplayName(this, packageName, applicationInfo)
+            ?.toString()?.takeIf { it.isNotBlank() } ?: "space"
+
         refreshKeyboardLayout()
         updateSuggestions()
     }
@@ -412,15 +424,15 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
             KeyCodes.PHOTO_PICKER -> launchPhotoPicker()
             KeyCodes.FILE_PICKER -> launchFilePicker()
 
-            KeyCodes.EMOJI_CATEGORY_SMILEYS -> { emojiCategory = EmojiCategory.SMILEYS; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_GESTURES -> { emojiCategory = EmojiCategory.GESTURES; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_ANIMALS -> { emojiCategory = EmojiCategory.ANIMALS; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_FOOD -> { emojiCategory = EmojiCategory.FOOD; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_ACTIVITIES -> { emojiCategory = EmojiCategory.ACTIVITIES; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_TRAVEL -> { emojiCategory = EmojiCategory.TRAVEL; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_OBJECTS -> { emojiCategory = EmojiCategory.OBJECTS; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_SYMBOLS -> { emojiCategory = EmojiCategory.SYMBOLS; refreshKeyboardLayout() }
-            KeyCodes.EMOJI_CATEGORY_RECENT -> { emojiCategory = EmojiCategory.RECENT; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_SMILEYS -> { emojiCategory = EmojiCategory.SMILEYS; prefs.emojiCategory = "SMILEYS"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_GESTURES -> { emojiCategory = EmojiCategory.GESTURES; prefs.emojiCategory = "GESTURES"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_ANIMALS -> { emojiCategory = EmojiCategory.ANIMALS; prefs.emojiCategory = "ANIMALS"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_FOOD -> { emojiCategory = EmojiCategory.FOOD; prefs.emojiCategory = "FOOD"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_ACTIVITIES -> { emojiCategory = EmojiCategory.ACTIVITIES; prefs.emojiCategory = "ACTIVITIES"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_TRAVEL -> { emojiCategory = EmojiCategory.TRAVEL; prefs.emojiCategory = "TRAVEL"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_OBJECTS -> { emojiCategory = EmojiCategory.OBJECTS; prefs.emojiCategory = "OBJECTS"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_SYMBOLS -> { emojiCategory = EmojiCategory.SYMBOLS; prefs.emojiCategory = "SYMBOLS"; refreshKeyboardLayout() }
+            KeyCodes.EMOJI_CATEGORY_RECENT -> { emojiCategory = EmojiCategory.RECENT; prefs.emojiCategory = "RECENT"; refreshKeyboardLayout() }
 
             KeyCodes.CLIP_ITEM -> {
                 val clipText = key.output
@@ -598,6 +610,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         while (recentEmojis.size > MAX_RECENT_EMOJIS) {
             recentEmojis.removeAt(recentEmojis.lastIndex)
         }
+        prefs.saveRecentEmojis(recentEmojis)
     }
 
     private fun performPaste(ic: InputConnection) {
@@ -623,25 +636,30 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
         inputManager.commitCurrentWord(ic)
         val cursor = inputManager.getCursorState(ic)
         val chunks = text.chunked(ClipboardStore.CHUNK_SIZE)
+        var delay = 0L
 
-        ic.beginBatchEdit()
-        try {
-            for (chunk in chunks) {
-                ic.commitText(chunk, 1)
-            }
-        } finally {
-            ic.endBatchEdit()
+        for (chunk in chunks) {
+            chunkedPasteHandler.postDelayed({
+                if (!isChunkedPasteInProgress) return@postDelayed
+                val conn = currentInputConnection ?: return@postDelayed
+                conn.beginBatchEdit()
+                conn.commitText(chunk, 1)
+                conn.endBatchEdit()
+            }, delay)
+            delay += 16L // one frame per chunk (~16ms) keeps UI thread free
         }
 
-        val entry = UndoEntry(
-            text = text,
-            cursorStart = cursor.start,
-            selectionStart = cursor.start,
-            selectionEnd = cursor.end
-        )
-        // Delegate state tracking to inputManager undo stack
-        inputManager.commitTextWithUndo(ic, "") // just to sync any stack ops if needed
-        isChunkedPasteInProgress = false
+        chunkedPasteHandler.postDelayed({
+            isChunkedPasteInProgress = false
+            val entry = UndoEntry(
+                text = text.take(ClipboardStore.CHUNK_SIZE * 4),
+                actualTextLength = text.length, // real length
+                cursorStart = cursor.start,
+                selectionStart = cursor.start,
+                selectionEnd = cursor.end
+            )
+            inputManager.pushUndo(entry)
+        }, delay)
     }
 
     private fun launchPhotoPicker() {
@@ -823,12 +841,7 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
                 clipHistory = clip.history(),
                 pinnedIndices = clip.pinnedIndices()
             )
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            val subtype = imm.currentInputMethodSubtype
-            val spaceLabel = subtype?.let {
-                val name = it.getDisplayName(this@KeyboardImeService, packageName, applicationInfo).toString()
-                if (name.isNotBlank()) name else "space"
-            } ?: "space"
+            val spaceLabel = cachedSubtypeLabel
             val updatedKeys = keys.map { row ->
                 row.map { key ->
                     if (key.code == KeyCodes.SPACE) {
@@ -889,10 +902,12 @@ class KeyboardImeService : InputMethodService(), KeyboardView.Listener {
 
         when {
             variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS -> {
-                // Email field
+                // Switch to SYMBOLS panel immediately for quick access to '@'
+                currentPanel = Panel.SYMBOLS
             }
             variation == android.text.InputType.TYPE_TEXT_VARIATION_URI -> {
-                // URL field
+                // Switch to SYMBOLS panel immediately for quick access to '/' and ':'
+                currentPanel = Panel.SYMBOLS
             }
             klass == android.text.InputType.TYPE_CLASS_PHONE -> {
                 currentPanel = Panel.NUMPAD

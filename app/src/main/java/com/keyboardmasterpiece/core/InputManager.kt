@@ -12,6 +12,7 @@ data class CursorState(val start: Int, val end: Int)
 // Core Undo/Redo entry structure
 data class UndoEntry(
     val text: String,
+    val actualTextLength: Int,
     val cursorStart: Int,
     val selectionStart: Int,
     val selectionEnd: Int
@@ -166,10 +167,15 @@ class InputManager(
 
         val entry = UndoEntry(
             text = undoText,
+            actualTextLength = text.length,
             cursorStart = cursor.start,
             selectionStart = cursor.start,
             selectionEnd = cursor.end
         )
+        pushUndo(entry)
+    }
+
+    fun pushUndo(entry: UndoEntry) {
         undoStack.addLast(entry)
         if (undoStack.size > UNDO_LIMIT) undoStack.removeFirst()
         redoStack.clear()
@@ -177,7 +183,7 @@ class InputManager(
 
     fun performUndo(ic: InputConnection) {
         val entry = undoStack.removeLastOrNull() ?: return
-        val textLength = entry.text.length
+        val textLength = entry.actualTextLength
         val deletePosition = entry.cursorStart
         val currentCursorState = getCursorState(ic)
         val currentCursor = currentCursorState.start

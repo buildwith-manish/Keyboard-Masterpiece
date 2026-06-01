@@ -53,8 +53,9 @@ class KeyboardMasterpieceTest {
         assertEquals(5, state.start)
         assertEquals(10, state.end)
 
-        val entry = UndoEntry("hello", 2, 2, 7)
+        val entry = UndoEntry("hello", 5, 2, 2, 7)
         assertEquals("hello", entry.text)
+        assertEquals(5, entry.actualTextLength)
         assertEquals(2, entry.cursorStart)
         assertEquals(7, entry.selectionEnd)
     }

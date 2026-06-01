@@ -69,8 +69,8 @@ class ClipboardStore(context: Context) {
 // EncryptedSharedPreferences is too slow for large text -- writing 100KB+
 // can take seconds. Instead, we keep large clips in memory with TTL.
 // Cleared on low memory and on service destroy.
-    private val largeClipCache = object : LinkedHashMap<String, Long>(MAX_LARGE_CLIPS, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean {
+    private val largeClipCache = object : LinkedHashMap<String, String>(MAX_LARGE_CLIPS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
             return size > MAX_LARGE_CLIPS
         }
     }
@@ -136,7 +136,7 @@ class ClipboardStore(context: Context) {
         if (largeClipCache.isNotEmpty()) {
             val mostRecentKey = largeClipTimestamps.entries
                 .maxByOrNull { it.value }?.key
-            mostRecentKey?.let { return largeClipCache[it]!!.toString() }
+            mostRecentKey?.let { return largeClipCache[it] ?: "" }
         }
 
         return clipText
@@ -204,7 +204,7 @@ class ClipboardStore(context: Context) {
                 }
             }
             val key = "large_${System.currentTimeMillis()}"
-            largeClipCache[key] = text.length.toLong() // Store length as value for LRU tracking
+            largeClipCache[key] = text
             largeClipTimestamps[key] = System.currentTimeMillis()
             // We also store a reference in the encrypted prefs (just a marker, not the text)
             rememberMarker(key)
@@ -245,9 +245,7 @@ class ClipboardStore(context: Context) {
         pruneLargeClipCache()
         if (largeClipCache.isEmpty()) return null
         val mostRecentKey = largeClipTimestamps.entries.maxByOrNull { it.value }?.key ?: return null
-        val length = largeClipCache[mostRecentKey] ?: return null
-        // The large clip text is the actual system clipboard text
-        return pasteText()
+        return largeClipCache[mostRecentKey]
     }
 
     fun history(): List<String> {

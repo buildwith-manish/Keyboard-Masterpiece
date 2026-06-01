@@ -270,7 +270,11 @@ class SuggestionEngine(private val prefs: UserPreferences) {
 
         val prefix = clean.substring(0, min(clean.length, 2))
         val candidates = trie.getSuggestions(prefix, maxResults = 50) + commonWords.take(50)
-        val candidate = candidates.minByOrNull { distance(clean, it) + (1000 - (wordFrequency[it] ?: 0)) * 0.01 } ?: return null
+        val candidate = candidates.minByOrNull { word ->
+            val d = distance(clean, word)
+            if (d == 0) 0.0  // exact match always wins, no frequency penalty
+            else d + (1000 - (wordFrequency[word] ?: 0)) * 0.01
+        } ?: return null
 
         val dist = distance(clean, candidate)
         return if (candidate != clean && dist <= 1) candidate else null

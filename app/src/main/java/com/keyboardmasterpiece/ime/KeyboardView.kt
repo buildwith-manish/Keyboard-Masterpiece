@@ -123,6 +123,8 @@ class KeyboardView(context: Context) : View(context) {
     // so it can be cancelled in handleUp. Previously, an anonymous Runnable was posted
     // but never removed, causing an unstoppable backspace repeat after a quick tap.
     private var backspaceRepeatStartRunnable: Runnable? = null
+    private var repeatingEmojiKey: KeyboardKey? = null
+    private var emojiRepeatStartRunnable: Runnable? = null
     private var needsLayout = true
     private var cachedRowHeight = 0f
     private var cachedStartX = 0f
@@ -251,13 +253,26 @@ class KeyboardView(context: Context) : View(context) {
 
     private val longPress = Runnable {
         val state = pointerStates.get(primaryPointerId) ?: return@Runnable
-        state.downKey?.let {
-            previewKey = it
+        state.downKey?.let { key ->
+            previewKey = key
             previewKeyStartTime = System.currentTimeMillis()
-            listener?.onLongPress(it)
-            if (it.code == KeyCodes.BACKSPACE) startBackspaceRepeat()
+            // Emoji repeat: if we're in emoji panel and key is a printable emoji key
+            if (panel == Panel.EMOJI && !key.isAction && key.output.isNotBlank()) {
+                repeatingEmojiKey = key
+                listener?.onKey(key) // first immediate commit
+                val r = Runnable { startEmojiRepeat() }
+                emojiRepeatStartRunnable = r
+                handler.postDelayed(r, 120L) // start repeating after short delay
+            } else {
+                listener?.onLongPress(key)
+                if (key.code == KeyCodes.BACKSPACE) startBackspaceRepeat()
+            }
         }
         postInvalidateOnAnimation() // FIX: HIGH-001
+    }
+
+    private fun startEmojiRepeat() {
+        handler.post(emojiRepeatRunnable)
     }
 
     // FIX: MED-004 -- Repeat interval 50ms instead of 45ms
@@ -270,6 +285,18 @@ class KeyboardView(context: Context) : View(context) {
                 handler.postDelayed(this, BACKSPACE_REPEAT_INTERVAL_MS)
             } else {
                 repeatBackspace = false
+            }
+        }
+    }
+
+    private val emojiRepeatRunnable = object : Runnable {
+        override fun run() {
+            val key = repeatingEmojiKey
+            if (key != null && primaryPointerId >= 0) {
+                listener?.onKey(key)
+                handler.postDelayed(this, 80L) // 80ms interval
+            } else {
+                repeatingEmojiKey = null
             }
         }
     }
@@ -666,6 +693,11 @@ class KeyboardView(context: Context) : View(context) {
             repeatBackspace = false
             handler.removeCallbacks(repeatRunnable)
 
+            emojiRepeatStartRunnable?.let { handler.removeCallbacks(it) }
+            emojiRepeatStartRunnable = null
+            repeatingEmojiKey = null
+            handler.removeCallbacks(emojiRepeatRunnable)
+
             val finalKey = hitTest(x, y) ?: state.downKey
             val movedDistance = distance(x, y, state.downX, state.downY)
 
@@ -727,6 +759,12 @@ class KeyboardView(context: Context) : View(context) {
         backspaceRepeatStartRunnable = null
         repeatBackspace = false
         handler.removeCallbacks(repeatRunnable)
+
+        emojiRepeatStartRunnable?.let { handler.removeCallbacks(it) }
+        emojiRepeatStartRunnable = null
+        repeatingEmojiKey = null
+        handler.removeCallbacks(emojiRepeatRunnable)
+
         isDraggingHandle = false // Feature 5
         pointerStates.clear()
         primaryPointerId = -1
@@ -804,6 +842,8 @@ class KeyboardView(context: Context) : View(context) {
         pressedSuggestionIndex = -1
         isDraggingHandle = false // Feature 5
         backspaceRepeatStartRunnable = null // FIX: BUG-REPEAT -- Clear reference on detach
+        repeatingEmojiKey = null
+        emojiRepeatStartRunnable = null
 
         handler.removeCallbacksAndMessages(null)
         path.reset()

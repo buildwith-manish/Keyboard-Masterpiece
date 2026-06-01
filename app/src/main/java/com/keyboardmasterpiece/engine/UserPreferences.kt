@@ -34,6 +34,8 @@ class UserPreferences private constructor(
         private const val KEY_LAST_LAYOUT_PANEL = "last_layout_panel"
         private const val KEY_PERSONAL_WORDS = "personal_words"
         private const val KEY_THEME_INDEX = "theme_index"
+        private const val KEY_RECENT_EMOJIS = "recent_emojis"
+        private const val KEY_EMOJI_CATEGORY = "emoji_category"
 
         // Default values
         private const val DEFAULT_DARK_THEME = false
@@ -148,4 +150,18 @@ class UserPreferences private constructor(
     // Detect landscape orientation from context configuration.
     fun isLandscape(context: Context): Boolean =
         context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    var emojiCategory: String
+        get() = sp.getString(KEY_EMOJI_CATEGORY, "SMILEYS") ?: "SMILEYS"
+        set(value) = sp.edit().putString(KEY_EMOJI_CATEGORY, value).apply()
+
+    fun recentEmojis(): MutableList<String> {
+        val raw = sp.getString(KEY_RECENT_EMOJIS, "") ?: ""
+        return if (raw.isBlank()) mutableListOf()
+        else raw.split("||").toMutableList()
+    }
+
+    fun saveRecentEmojis(emojis: List<String>) {
+        sp.edit().putString(KEY_RECENT_EMOJIS, emojis.take(20).joinToString("||")).apply()
+    }
 }
